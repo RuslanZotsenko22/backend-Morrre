@@ -6,6 +6,8 @@ import { Case, CaseSchema } from './schemas/case.schema';
 import { MediaModule } from '../media/media.module';
 import { QueueModule } from '../queue/queue.module';
 
+
+
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Case.name, schema: CaseSchema }]),
