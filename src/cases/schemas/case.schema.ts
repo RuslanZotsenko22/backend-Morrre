@@ -28,4 +28,15 @@ export class Case {
   status: 'draft' | 'published';
 }
 export const CaseSchema = SchemaFactory.createForClass(Case);
-CaseSchema.index({ title: 'text', tags: 1, categories: 1, industry: 1 });
+
+// Текстовий індекс — тільки по рядках
+CaseSchema.index(
+  { title: 'text', description: 'text' },
+  { weights: { title: 5, description: 1 }, name: 'text_title_description' }
+);
+
+// Звичайні індекси для фільтрації
+CaseSchema.index({ tags: 1 }, { name: 'idx_tags' });
+CaseSchema.index({ categories: 1 }, { name: 'idx_categories' });
+CaseSchema.index({ industry: 1 }, { name: 'idx_industry' });
+

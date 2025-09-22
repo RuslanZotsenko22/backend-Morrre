@@ -39,9 +39,4 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
-// ❌ Прибрали ручні індекси, щоб не дублювати з `@Prop({ unique: true })`
-// UserSchema.index({ email: 1 }, { unique: true });
-// UserSchema.index({ username: 1 }, { unique: true, sparse: true });
-
-// Опційно: приховати passwordHash навіть якщо десь буде вибраний
 

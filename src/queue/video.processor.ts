@@ -1,6 +1,6 @@
 import { Inject, OnModuleInit, forwardRef, Injectable } from '@nestjs/common';
 import { Worker } from 'bullmq';
-import type { Redis } from 'ioredis';            // ✅ імпортуємо лише тип
+import type { Redis } from 'ioredis';            
 import { QUEUE_TOKENS } from './bullmq.provider';
 import { VimeoService } from '../vimeo/vimeo.service';
 import { CasesService } from '../cases/cases.service';
@@ -8,7 +8,7 @@ import { CasesService } from '../cases/cases.service';
 @Injectable()
 export class VideoProcessor implements OnModuleInit {
   constructor(
-    @Inject(QUEUE_TOKENS.REDIS) private readonly connection: Redis, // ✅ правильний тип
+    @Inject(QUEUE_TOKENS.REDIS) private readonly connection: Redis, 
     private readonly vimeo: VimeoService,
     @Inject(forwardRef(() => CasesService))
     private readonly cases: CasesService,
