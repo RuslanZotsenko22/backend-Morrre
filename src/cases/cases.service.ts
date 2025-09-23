@@ -29,7 +29,6 @@ interface CoverImage {
   >;
 }
 
-
 /** Статуси життєвого циклу відео */
 type VideoStatus = 'queued' | 'uploading' | 'processing' | 'ready' | 'error';
 
@@ -217,28 +216,27 @@ export class CasesService implements OnModuleInit {
       throw new BadRequestException('Invalid cover payload');
     }
 
-  // 🔧 Нормалізація sizes: дозволяємо як { key: "url" }, так і { key: { url, ... } }
-  if (cover.sizes && typeof cover.sizes === 'object') {
-    const normalized: NonNullable<CoverImage['sizes']> = {};
-    for (const [key, val] of Object.entries(cover.sizes)) {
-      if (typeof val === 'string') {
-        if (!val.trim()) continue;
-        normalized[key] = { url: val.trim() };
-      } else if (
-        val &&
-        typeof val === 'object' &&
-        typeof (val as any).url === 'string' &&
-        (val as any).url.trim()
-      ) {
-        normalized[key] = { ...(val as any), url: (val as any).url.trim() };
-      } else {
-        // пропускаємо невалідні елементи
-        continue;
+    // 🔧 Нормалізація sizes: дозволяємо як { key: "url" }, так і { key: { url, ... } }
+    if (cover.sizes && typeof cover.sizes === 'object') {
+      const normalized: NonNullable<CoverImage['sizes']> = {};
+      for (const [key, val] of Object.entries(cover.sizes)) {
+        if (typeof val === 'string') {
+          if (!val.trim()) continue;
+          normalized[key] = { url: val.trim() };
+        } else if (
+          val &&
+          typeof val === 'object' &&
+          typeof (val as any).url === 'string' &&
+          (val as any).url.trim()
+        ) {
+          normalized[key] = { ...(val as any), url: (val as any).url.trim() };
+        } else {
+          // пропускаємо невалідні елементи
+          continue;
+        }
       }
+      cover = { ...cover, sizes: normalized };
     }
-    cover = { ...cover, sizes: normalized };
-  }
-
 
     doc.cover = cover;
     await doc.save();
@@ -289,6 +287,30 @@ export class CasesService implements OnModuleInit {
 
     return this.caseModel.updateOne(
       { _id: caseId, 'videos.vimeoId': vimeoId },
+      { $set },
+      { runValidators: true },
+    );
+  }
+
+  // 🔥 NEW: оновлення відео за vimeoId без знання caseId (для вебхука)
+  async updateVideoStatusByVimeoId(
+    vimeoId: string,
+    patch: { status: VideoStatus | string; playbackUrl?: string; thumbnailUrl?: string },
+  ) {
+    if (!vimeoId || !vimeoId.trim()) {
+      throw new BadRequestException('vimeoId required');
+    }
+    const $set: Record<string, unknown> = {};
+    if (patch.status) $set['videos.$.status'] = patch.status;
+    if (patch.playbackUrl) $set['videos.$.playbackUrl'] = patch.playbackUrl;
+    if (patch.thumbnailUrl) $set['videos.$.thumbnailUrl'] = patch.thumbnailUrl;
+
+    if (Object.keys($set).length === 0) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    return this.caseModel.updateOne(
+      { 'videos.vimeoId': vimeoId },
       { $set },
       { runValidators: true },
     );
