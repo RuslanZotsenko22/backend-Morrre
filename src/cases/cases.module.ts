@@ -12,10 +12,10 @@ import { QueueModule } from '../queue/queue.module';
   imports: [
     MongooseModule.forFeature([{ name: Case.name, schema: CaseSchema }]),
     MediaModule,
-    forwardRef(() => QueueModule), // ⬅️ важливо
+    forwardRef(() => QueueModule), 
   ],
   controllers: [CasesController],
   providers: [CasesService],
-  exports: [MongooseModule, CasesService], // ⬅️ щоб QueueModule міг інжектити CasesService
+  exports: [MongooseModule, CasesService], 
 })
 export class CasesModule {}

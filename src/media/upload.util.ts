@@ -1,4 +1,4 @@
-// src/media/upload.util.ts
+
 import { diskStorage } from 'multer';
 import type { Options } from 'multer';
 import { promises as fs } from 'fs';
@@ -21,7 +21,7 @@ export const uploadVideoMulter: Options = {
     },
   }),
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB, за потреби зміни
+    fileSize: 500 * 1024 * 1024, // 500MB, за потреби можна змінити 
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype?.startsWith('video/')) return cb(null, true);

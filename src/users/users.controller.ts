@@ -15,7 +15,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Patch('me')
   update(@Req() req, @Body() body: any) {
-    // DTO можна додати за бажанням
+    
     return this.users.updateProfile(req.user.userId, body);
   }
 }

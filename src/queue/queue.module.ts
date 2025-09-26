@@ -8,7 +8,7 @@ import { CasesModule } from '../cases/cases.module';
 @Module({
   imports: [
     VimeoModule,
-    forwardRef(() => CasesModule), // ⬅️ зворотній forwardRef
+    forwardRef(() => CasesModule), 
   ],
   providers: [...BullMqProviders, VideoQueue, VideoProcessor],
   exports: [VideoQueue],

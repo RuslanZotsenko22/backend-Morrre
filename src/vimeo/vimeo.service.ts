@@ -1,4 +1,4 @@
-// src/vimeo/vimeo.service.ts
+
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { createReadStream, statSync } from 'fs';

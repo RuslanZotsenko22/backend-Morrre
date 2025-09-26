@@ -292,7 +292,7 @@ export class CasesService implements OnModuleInit {
     );
   }
 
-  // 🔥 NEW: оновлення відео за vimeoId без знання caseId (для вебхука)
+  //  NEW: оновлення відео за vimeoId без знання caseId (для вебхука)
   async updateVideoStatusByVimeoId(
     vimeoId: string,
     patch: { status: VideoStatus | string; playbackUrl?: string; thumbnailUrl?: string },
@@ -304,6 +304,8 @@ export class CasesService implements OnModuleInit {
     if (patch.status) $set['videos.$.status'] = patch.status;
     if (patch.playbackUrl) $set['videos.$.playbackUrl'] = patch.playbackUrl;
     if (patch.thumbnailUrl) $set['videos.$.thumbnailUrl'] = patch.thumbnailUrl;
+
+ $set['videos.$.vimeoId'] = vimeoId;
 
     if (Object.keys($set).length === 0) {
       throw new BadRequestException('Nothing to update');

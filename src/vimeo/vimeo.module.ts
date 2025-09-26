@@ -4,9 +4,9 @@ import { VimeoWebhookController } from './vimeo.webhook.controller';
 import { CasesModule } from '../cases/cases.module';
 
 @Module({
-  imports: [forwardRef(() => CasesModule)], // ✅ якщо вебхук використовує CasesService
+  imports: [forwardRef(() => CasesModule)], 
   providers: [VimeoService],
   controllers: [VimeoWebhookController],
-  exports: [VimeoService],                   // ✅ QueueModule залежить від VimeoService
+  exports: [VimeoService],                   
 })
 export class VimeoModule {}

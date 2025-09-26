@@ -1,4 +1,4 @@
-// src/cases/cases.controller.ts
+
 import {
   Body,
   Controller,
@@ -21,7 +21,7 @@ import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-// ⬇️ Лишаємо тільки відео-малтер
+// ⬇ Лишаємо тільки відео-малтер
 import { uploadVideoMulter } from '../media/upload.util';
 import { MediaService } from '../media/cloudinary.service';
 import { VideoQueue } from '../queue/video.queue';
