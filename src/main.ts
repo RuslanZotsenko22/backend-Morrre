@@ -7,17 +7,26 @@ import * as bodyParser from 'body-parser';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // CORS для CMS (http://localhost:3001)
+  app.enableCors({
+    origin: ['http://localhost:3001'],
+    credentials: true,
+  });
+
+  // Глобальний префікс API
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  //  ВАЖЛИВО: raw body тільки для вебхука Vimeo (щоб коректно рахувати HMAC)
-  // Ставимо ПЕРЕД listen і ПЕРЕД іншими парсерами
-  app.use('/api/vimeo/webhook', bodyParser.raw({ type: '*/*' })); // або 'application/json'
+  // RAW body лише для Vimeo webhook — має бути ДО інших парсерів
+  app.use('/api/vimeo/webhook', bodyParser.raw({ type: '*/*' }));
 
-  // (опційно) загальні парсери для решти роутів
+  // Решта парсерів (якщо потрібно)
   app.use(bodyParser.json());
   app.use(bodyParser.urlencoded({ extended: true }));
 
+  // Валідація
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Swagger
   const config = new DocumentBuilder()
     .setTitle('Branding API')
     .setVersion('1.0')
@@ -26,7 +35,10 @@ async function bootstrap() {
   const doc = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, doc);
 
-  await app.listen(process.env.PORT || 4000);
+  // ЄДИНИЙ виклик listen()
+  const port = Number(process.env.PORT) || 4000;
+  await app.listen(port);
+  console.log(`Nest listening on http://localhost:${port}`);
 }
 
 bootstrap();
