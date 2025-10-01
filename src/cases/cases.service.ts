@@ -317,4 +317,85 @@ export class CasesService implements OnModuleInit {
       { runValidators: true },
     );
   }
+
+  // === sync helpers (викликаються воркером) ===
+
+  /**
+   * Синх із тієї ж Mongo (найпростіше і без авторизації).
+   * Підтягуємо актуальний документ і виконуємо бізнес-дії
+   * (оновлення індексів/кешів/обчислюваних полів тощо).
+   */
+  public async syncFromMongo(id: string): Promise<void> {
+    ensureObjectId(id);
+    const doc = await this.caseModel.findById(id).lean();
+    if (!doc) {
+      return; // кейс видалено або id некоректний — просто виходимо
+    }
+
+    // приклад мінімальної нормалізації/патчу
+    const patch: Partial<UpdateCaseDto> = {};
+    const tags = normalizeStringArray((doc as any).tags, 20);
+    const categories = normalizeStringArray((doc as any).categories, 3);
+    if (JSON.stringify(tags) !== JSON.stringify((doc as any).tags)) patch.tags = tags;
+    if (JSON.stringify(categories) !== JSON.stringify((doc as any).categories)) patch.categories = categories;
+
+    if (Object.keys(patch).length) {
+      await this.caseModel.updateOne(
+        { _id: id },
+        { $set: sanitizeUpdateDto(patch) },
+        { runValidators: true },
+      );
+    }
+  }
+
+  /**
+   * Синх із документа, отриманого через Payload REST (із depth/relations).
+   * Використовуй, якщо у воркері тягнеш doc через HTTP (варіант B).
+   */
+  public async syncFromPayload(doc: any): Promise<void> {
+    if (!doc || !doc.id) return;
+
+    const patch: UpdateCaseDto = {
+      title: typeof doc.title === 'string' ? doc.title : undefined,
+      description: typeof doc.description === 'string' ? doc.description : undefined,
+      status: (doc.status === 'draft' || doc.status === 'published') ? doc.status : undefined,
+      industry: typeof doc.industry === 'string' ? doc.industry : undefined,
+      // у твоїй Payload-колекції tags/categories — масив об'єктів { value }
+      tags: Array.isArray(doc.tags)
+        ? doc.tags.map((t: any) => (typeof t?.value === 'string' ? t.value : null)).filter(Boolean)
+        : undefined,
+      categories: Array.isArray(doc.categories)
+        ? doc.categories.map((c: any) => (typeof c?.value === 'string' ? c.value : null)).filter(Boolean)
+        : undefined,
+    };
+
+    const clean = sanitizeUpdateDto(patch);
+    const $set: Record<string, unknown> = { ...clean };
+
+    if (doc.cover && typeof doc.cover === 'object') {
+      $set['cover'] = {
+        type: 'image',
+        url: doc.cover?.url ?? '',
+        alt: doc.cover?.alt,
+        sizes: doc.cover?.sizes ?? undefined,
+      };
+    }
+
+    if (Array.isArray(doc.videos)) {
+      // очікуємо поля { provider, externalId, status, url }
+      $set['videos'] = doc.videos.map((v: any) => ({
+        vimeoId: typeof v?.externalId === 'string' ? v.externalId : undefined,
+        status: typeof v?.status === 'string' ? v.status : 'queued',
+        playbackUrl: typeof v?.url === 'string' ? v.url : undefined,
+      })) as any[];
+    }
+
+    await this.caseModel.updateOne(
+      { _id: doc.id },
+      { $set },
+      { runValidators: true },
+    );
+  }
+
+  
 }
