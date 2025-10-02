@@ -63,20 +63,22 @@ export type SupportedTimezones =
 
 export interface Config {
   auth: {
-    users: UserAuthOperations;
+    admins: AdminAuthOperations;
   };
   blocks: {};
   collections: {
+    admins: Admin;
     users: User;
-    media: Media;
+    cases: Case;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
     'payload-migrations': PayloadMigration;
   };
   collectionsJoins: {};
   collectionsSelect: {
+    admins: AdminsSelect<false> | AdminsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
-    media: MediaSelect<false> | MediaSelect<true>;
+    cases: CasesSelect<false> | CasesSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
     'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
@@ -87,15 +89,15 @@ export interface Config {
   globals: {};
   globalsSelect: {};
   locale: null;
-  user: User & {
-    collection: 'users';
+  user: Admin & {
+    collection: 'admins';
   };
   jobs: {
     tasks: unknown;
     workflows: unknown;
   };
 }
-export interface UserAuthOperations {
+export interface AdminAuthOperations {
   forgotPassword: {
     email: string;
     password: string;
@@ -115,10 +117,11 @@ export interface UserAuthOperations {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "users".
+ * via the `definition` "admins".
  */
-export interface User {
+export interface Admin {
   id: string;
+  role?: 'admin' | null;
   updatedAt: string;
   createdAt: string;
   email: string;
@@ -139,22 +142,95 @@ export interface User {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "media".
+ * via the `definition` "users".
  */
-export interface Media {
+export interface User {
   id: string;
-  alt: string;
+  email: string;
+  name?: string | null;
+  avatar?: string | null;
+  about?: string | null;
+  location?: string | null;
+  socials?:
+    | {
+        type?: string | null;
+        url?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  passwordHash?: string | null;
+  roles?:
+    | {
+        value?: string | null;
+        id?: string | null;
+      }[]
+    | null;
   updatedAt: string;
   createdAt: string;
-  url?: string | null;
-  thumbnailURL?: string | null;
-  filename?: string | null;
-  mimeType?: string | null;
-  filesize?: number | null;
-  width?: number | null;
-  height?: number | null;
-  focalX?: number | null;
-  focalY?: number | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "cases".
+ */
+export interface Case {
+  id: string;
+  title: string;
+  description?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
+  status?: ('draft' | 'published') | null;
+  industry?: string | null;
+  tags?:
+    | {
+        value?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  categories?:
+    | {
+        value?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  contributors?:
+    | {
+        userId?: (string | null) | User;
+        role?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  cover?: {
+    url?: string | null;
+    sizes?: {
+      low?: string | null;
+      medium?: string | null;
+      high?: string | null;
+    };
+  };
+  videos?:
+    | {
+        provider?: string | null;
+        externalId?: string | null;
+        status?: ('queued' | 'processing' | 'ready' | 'failed') | null;
+        url?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  ownerId: string | User;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -164,17 +240,21 @@ export interface PayloadLockedDocument {
   id: string;
   document?:
     | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
         relationTo: 'users';
         value: string | User;
       } | null)
     | ({
-        relationTo: 'media';
-        value: string | Media;
+        relationTo: 'cases';
+        value: string | Case;
       } | null);
   globalSlug?: string | null;
   user: {
-    relationTo: 'users';
-    value: string | User;
+    relationTo: 'admins';
+    value: string | Admin;
   };
   updatedAt: string;
   createdAt: string;
@@ -186,8 +266,8 @@ export interface PayloadLockedDocument {
 export interface PayloadPreference {
   id: string;
   user: {
-    relationTo: 'users';
-    value: string | User;
+    relationTo: 'admins';
+    value: string | Admin;
   };
   key?: string | null;
   value?:
@@ -215,9 +295,10 @@ export interface PayloadMigration {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "users_select".
+ * via the `definition` "admins_select".
  */
-export interface UsersSelect<T extends boolean = true> {
+export interface AdminsSelect<T extends boolean = true> {
+  role?: T;
   updatedAt?: T;
   createdAt?: T;
   email?: T;
@@ -237,21 +318,83 @@ export interface UsersSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "media_select".
+ * via the `definition` "users_select".
  */
-export interface MediaSelect<T extends boolean = true> {
-  alt?: T;
+export interface UsersSelect<T extends boolean = true> {
+  email?: T;
+  name?: T;
+  avatar?: T;
+  about?: T;
+  location?: T;
+  socials?:
+    | T
+    | {
+        type?: T;
+        url?: T;
+        id?: T;
+      };
+  passwordHash?: T;
+  roles?:
+    | T
+    | {
+        value?: T;
+        id?: T;
+      };
   updatedAt?: T;
   createdAt?: T;
-  url?: T;
-  thumbnailURL?: T;
-  filename?: T;
-  mimeType?: T;
-  filesize?: T;
-  width?: T;
-  height?: T;
-  focalX?: T;
-  focalY?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "cases_select".
+ */
+export interface CasesSelect<T extends boolean = true> {
+  title?: T;
+  description?: T;
+  status?: T;
+  industry?: T;
+  tags?:
+    | T
+    | {
+        value?: T;
+        id?: T;
+      };
+  categories?:
+    | T
+    | {
+        value?: T;
+        id?: T;
+      };
+  contributors?:
+    | T
+    | {
+        userId?: T;
+        role?: T;
+        id?: T;
+      };
+  cover?:
+    | T
+    | {
+        url?: T;
+        sizes?:
+          | T
+          | {
+              low?: T;
+              medium?: T;
+              high?: T;
+            };
+      };
+  videos?:
+    | T
+    | {
+        provider?: T;
+        externalId?: T;
+        status?: T;
+        url?: T;
+        id?: T;
+      };
+  ownerId?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

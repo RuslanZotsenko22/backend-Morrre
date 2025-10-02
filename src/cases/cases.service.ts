@@ -305,7 +305,7 @@ export class CasesService implements OnModuleInit {
     if (patch.playbackUrl) $set['videos.$.playbackUrl'] = patch.playbackUrl;
     if (patch.thumbnailUrl) $set['videos.$.thumbnailUrl'] = patch.thumbnailUrl;
 
- $set['videos.$.vimeoId'] = vimeoId;
+    $set['videos.$.vimeoId'] = vimeoId;
 
     if (Object.keys($set).length === 0) {
       throw new BadRequestException('Nothing to update');
@@ -326,25 +326,73 @@ export class CasesService implements OnModuleInit {
    * (оновлення індексів/кешів/обчислюваних полів тощо).
    */
   public async syncFromMongo(id: string): Promise<void> {
-    ensureObjectId(id);
+    // м’яко: без шуму в логах, якщо id не валідний
+    if (!isValidObjectId(id)) return;
+
     const doc = await this.caseModel.findById(id).lean();
-    if (!doc) {
-      return; // кейс видалено або id некоректний — просто виходимо
+    if (!doc) return;
+
+    const patch: Record<string, unknown> = {};
+
+    // 1) tags / categories → масиви рядків, lower, унікальні, ліміти
+    const normTags = normalizeStringArray((doc as any).tags, 20);
+    const normCats = normalizeStringArray((doc as any).categories, 3);
+    if (JSON.stringify(normTags) !== JSON.stringify((doc as any).tags)) {
+      patch['tags'] = normTags;
+    }
+    if (JSON.stringify(normCats) !== JSON.stringify((doc as any).categories)) {
+      patch['categories'] = normCats;
     }
 
-    // приклад мінімальної нормалізації/патчу
-    const patch: Partial<UpdateCaseDto> = {};
-    const tags = normalizeStringArray((doc as any).tags, 20);
-    const categories = normalizeStringArray((doc as any).categories, 3);
-    if (JSON.stringify(tags) !== JSON.stringify((doc as any).tags)) patch.tags = tags;
-    if (JSON.stringify(categories) !== JSON.stringify((doc as any).categories)) patch.categories = categories;
+    // 2) videos → фільтр статусів + дедуп за vimeoId
+    const ALLOWED_VIDEO: VideoStatus[] = ['queued', 'uploading', 'processing', 'ready', 'error'];
+    if (Array.isArray((doc as any).videos)) {
+      const seen = new Set<string>();
+      const videos: any [] = [];
+      for (const v of (doc as any).videos) {
+        if (!v || typeof v !== 'object') continue;
+        const status: VideoStatus = ALLOWED_VIDEO.includes(v.status) ? v.status : 'queued';
+        const vimeoId = typeof v.vimeoId === 'string' ? v.vimeoId.trim() : undefined;
 
-    if (Object.keys(patch).length) {
-      await this.caseModel.updateOne(
-        { _id: id },
-        { $set: sanitizeUpdateDto(patch) },
-        { runValidators: true },
-      );
+        // дедуп: якщо є vimeoId — ключ за ним, інакше унікальний ключ по індексу
+        const key = vimeoId ?? `__idx_${videos.length}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        videos.push({
+          ...v,
+          status,
+          ...(vimeoId ? { vimeoId } : {}),
+        });
+      }
+      if (JSON.stringify(videos) !== JSON.stringify((doc as any).videos)) {
+        patch['videos'] = videos;
+      }
+    }
+
+    // 3) cover.sizes: "url" → { url }
+    if (doc.cover?.sizes && typeof doc.cover.sizes === 'object') {
+      const sizes = doc.cover.sizes as Record<string, any>;
+      const norm: Record<string, any> = {};
+      let changed = false;
+      for (const [k, v] of Object.entries(sizes)) {
+        if (typeof v === 'string') {
+          const u = v.trim();
+          if (!u) continue;
+          norm[k] = { url: u };
+          changed = true;
+        } else if (v && typeof v === 'object' && typeof (v as any).url === 'string') {
+          const u = (v as any).url.trim();
+          if (!u) continue;
+          norm[k] = { ...(v as any), url: u };
+        }
+      }
+      if (changed) patch['cover.sizes'] = norm;
+    }
+
+    // Якщо є що оновлювати — застосовуємо
+    if (Object.keys(patch).length > 0) {
+      await this.caseModel.updateOne({ _id: id }, { $set: patch }, { runValidators: true });
     }
   }
 
@@ -396,6 +444,4 @@ export class CasesService implements OnModuleInit {
       { runValidators: true },
     );
   }
-
-  
 }

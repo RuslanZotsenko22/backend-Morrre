@@ -1,11 +1,20 @@
 // cms/src/payload.config.ts
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { buildConfig } from 'payload'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { mongooseAdapter } from '@payloadcms/db-mongodb'
 
-const mongoURL = process.env.MONGODB_URI || process.env.DATABASE_URI
-if (!mongoURL) throw new Error('Missing MONGODB_URI / DATABASE_URI')
+// __dirname у ESM
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const mongoURL =
+  process.env.MONGODB_URI ||
+  process.env.DATABASE_URI ||
+  process.env.MONGO_URI
+
+if (!mongoURL) throw new Error('Missing MONGODB_URI / DATABASE_URI / MONGO_URI')
 if (!process.env.PAYLOAD_SECRET) throw new Error('Missing PAYLOAD_SECRET')
 
 export default buildConfig({
@@ -23,7 +32,7 @@ export default buildConfig({
       auth: { cookies: true },
       admin: { useAsTitle: 'email' },
       access: {
-        read: ({ req }) => !!req.user, // бачать лише залогінені адміни
+        read: ({ req }) => !!req.user,
         create: ({ req }) => !!req.user,
         update: ({ req }) => !!req.user,
         delete: ({ req }) => !!req.user,
@@ -33,13 +42,12 @@ export default buildConfig({
       ],
     },
 
-    // 2) Користувачі прод-системи (редагуємо через UI, але auth керує Nest)
+    // 2) Користувачі (auth керує Nest)
     {
       slug: 'users',
-      // ВАЖЛИВО: НЕ вмикаємо auth тут, щоб не конфліктувати з Nest
       admin: { useAsTitle: 'email' },
       access: {
-        read: () => true, // або обмежити за потреби
+        read: () => true,
         create: ({ req }) => req.user?.collection === 'admins',
         update: ({ req }) => req.user?.collection === 'admins',
         delete: ({ req }) => req.user?.collection === 'admins',
@@ -47,7 +55,7 @@ export default buildConfig({
       fields: [
         { name: 'email', type: 'email', required: true, unique: true, admin: { readOnly: true } },
         { name: 'name', type: 'text' },
-        { name: 'avatar', type: 'text' },       // зберігай Cloudinary URL
+        { name: 'avatar', type: 'text' },
         { name: 'about', type: 'textarea' },
         { name: 'location', type: 'text' },
         {
@@ -58,7 +66,6 @@ export default buildConfig({
             { name: 'url', type: 'text' },
           ],
         },
-        // поля, якими керує Nest — тільки для перегляду
         { name: 'passwordHash', type: 'text', admin: { readOnly: true } },
         { name: 'roles', type: 'array', fields: [{ name: 'value', type: 'text' }], admin: { readOnly: true } },
       ],
@@ -69,7 +76,7 @@ export default buildConfig({
       slug: 'cases',
       admin: { useAsTitle: 'title' },
       access: {
-        read: () => true, // або лише published
+        read: () => true, // або тільки published
         create: ({ req }) => req.user?.collection === 'admins',
         update: ({ req }) => req.user?.collection === 'admins',
         delete: ({ req }) => req.user?.collection === 'admins',
@@ -110,14 +117,13 @@ export default buildConfig({
           type: 'array',
           fields: [
             { name: 'provider', type: 'text', defaultValue: 'vimeo' },
-            { name: 'externalId', type: 'text' },     // vimeo video id
-            { name: 'status', type: 'select', options: ['queued','processing','ready','failed'], defaultValue: 'ready' },
+            { name: 'externalId', type: 'text' }, // vimeo video id
+            { name: 'status', type: 'select', options: ['queued', 'processing', 'ready', 'failed'], defaultValue: 'ready' },
             { name: 'url', type: 'text' },
           ],
         },
         { name: 'ownerId', type: 'relationship', relationTo: 'users', required: true },
       ],
-      // Опційно: повідомляємо Nest про зміни
       hooks: {
         afterChange: [
           async ({ doc, operation }) => {
@@ -131,7 +137,9 @@ export default buildConfig({
                   },
                   body: JSON.stringify({ id: doc.id }),
                 })
-              } catch { /* ignore */ }
+              } catch {
+                // ignore network errors
+              }
             }
           },
         ],

@@ -6,22 +6,20 @@
   "type": "module",
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--no-deprecation PORT=3001 next dev",
-  "start": "cross-env NODE_OPTIONS=--no-deprecation PORT=3001 next start",
-  "build": "cross-env NODE_OPTIONS=\"--no-deprecation --max-old-space-size=8000\" next build",
-    
+    "start": "cross-env NODE_OPTIONS=--no-deprecation PORT=3001 next start",
+    "build": "cross-env NODE_OPTIONS=\"--no-deprecation --max-old-space-size=8000\" next build",
     "devsafe": "rm -rf .next && cross-env NODE_OPTIONS=--no-deprecation next dev",
     "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "lint": "cross-env NODE_OPTIONS=--no-deprecation next lint",
     "payload": "cross-env NODE_OPTIONS=--no-deprecation payload",
-    
     "test": "pnpm run test:int && pnpm run test:e2e",
     "test:e2e": "cross-env NODE_OPTIONS=\"--no-deprecation --no-experimental-strip-types\" pnpm exec playwright test",
     "test:int": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts"
   },
   "dependencies": {
     "@payloadcms/db-mongodb": "3.58.0",
-    "@payloadcms/next": "3.58.0",
+    "@payloadcms/next": "^3.58.0",
     "@payloadcms/payload-cloud": "3.58.0",
     "@payloadcms/richtext-lexical": "^3.58.0",
     "@payloadcms/ui": "3.58.0",
