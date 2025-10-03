@@ -231,7 +231,6 @@ export class CasesService implements OnModuleInit {
         ) {
           normalized[key] = { ...(val as any), url: (val as any).url.trim() };
         } else {
-          // пропускаємо невалідні елементи
           continue;
         }
       }
@@ -320,13 +319,8 @@ export class CasesService implements OnModuleInit {
 
   // === sync helpers (викликаються воркером) ===
 
-  /**
-   * Синх із тієї ж Mongo (найпростіше і без авторизації).
-   * Підтягуємо актуальний документ і виконуємо бізнес-дії
-   * (оновлення індексів/кешів/обчислюваних полів тощо).
-   */
+  /** Синх із тієї ж Mongo (м’яко, без шуму) */
   public async syncFromMongo(id: string): Promise<void> {
-    // м’яко: без шуму в логах, якщо id не валідний
     if (!isValidObjectId(id)) return;
 
     const doc = await this.caseModel.findById(id).lean();
@@ -348,13 +342,12 @@ export class CasesService implements OnModuleInit {
     const ALLOWED_VIDEO: VideoStatus[] = ['queued', 'uploading', 'processing', 'ready', 'error'];
     if (Array.isArray((doc as any).videos)) {
       const seen = new Set<string>();
-      const videos: any [] = [];
+      const videos: any[] = [];
       for (const v of (doc as any).videos) {
         if (!v || typeof v !== 'object') continue;
         const status: VideoStatus = ALLOWED_VIDEO.includes(v.status) ? v.status : 'queued';
         const vimeoId = typeof v.vimeoId === 'string' ? v.vimeoId.trim() : undefined;
 
-        // дедуп: якщо є vimeoId — ключ за ним, інакше унікальний ключ по індексу
         const key = vimeoId ?? `__idx_${videos.length}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -390,16 +383,12 @@ export class CasesService implements OnModuleInit {
       if (changed) patch['cover.sizes'] = norm;
     }
 
-    // Якщо є що оновлювати — застосовуємо
     if (Object.keys(patch).length > 0) {
       await this.caseModel.updateOne({ _id: id }, { $set: patch }, { runValidators: true });
     }
   }
 
-  /**
-   * Синх із документа, отриманого через Payload REST (із depth/relations).
-   * Використовуй, якщо у воркері тягнеш doc через HTTP (варіант B).
-   */
+  /** Синх із документа, отриманого через Payload REST (із depth/relations) */
   public async syncFromPayload(doc: any): Promise<void> {
     if (!doc || !doc.id) return;
 
@@ -408,7 +397,6 @@ export class CasesService implements OnModuleInit {
       description: typeof doc.description === 'string' ? doc.description : undefined,
       status: (doc.status === 'draft' || doc.status === 'published') ? doc.status : undefined,
       industry: typeof doc.industry === 'string' ? doc.industry : undefined,
-      // у твоїй Payload-колекції tags/categories — масив об'єктів { value }
       tags: Array.isArray(doc.tags)
         ? doc.tags.map((t: any) => (typeof t?.value === 'string' ? t.value : null)).filter(Boolean)
         : undefined,
@@ -430,7 +418,6 @@ export class CasesService implements OnModuleInit {
     }
 
     if (Array.isArray(doc.videos)) {
-      // очікуємо поля { provider, externalId, status, url }
       $set['videos'] = doc.videos.map((v: any) => ({
         vimeoId: typeof v?.externalId === 'string' ? v.externalId : undefined,
         status: typeof v?.status === 'string' ? v.status : 'queued',
@@ -443,5 +430,238 @@ export class CasesService implements OnModuleInit {
       { $set },
       { runValidators: true },
     );
+  }
+
+  /** =======================
+   *    ГОЛОВНА / POPULAR
+   *  ======================= */
+
+  /** Popular today (слайди) — у CMS виставляємо featuredSlides=true */
+  public async findPopularSlides(limit = 6) {
+    return this.caseModel
+      .find({ status: 'published', featuredSlides: true })
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean();
+  }
+
+  /** Discover — повертає останній батч популярних (опційно фільтр за категорією) */
+  public async findDiscoverBatch(params: { category?: string; limit: number }) {
+    const { category, limit } = params;
+
+    const latest = await this.caseModel
+      .findOne({ popularActive: true, popularBatchDate: { $ne: null } })
+      .sort({ popularBatchDate: -1 })
+      .select({ popularBatchDate: 1 })
+      .lean();
+
+    const batchDate = (latest as any)?.popularBatchDate;
+    if (!batchDate) return [];
+
+    const q: any = { popularActive: true, popularBatchDate: batchDate };
+
+    if (category) {
+      q.categories = { $in: [category.toLowerCase()] };
+    }
+
+    return this.caseModel
+      .find(q)
+      .sort({ popularPublishedAt: -1 })
+      .limit(limit)
+      .lean();
+  }
+
+  /** /api/cases/popular-slides */
+  public async getPopularSlides(limit = 6) {
+    const n = Math.max(3, Math.min(6, Number(limit) || 6));
+    // якщо у тебе є featuredSlides — використовуємо його
+    const docs = await this.caseModel
+      .find({ status: 'published', featuredSlides: true })
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .limit(n)
+      .select({
+        title: 1,
+        industry: 1,
+        categories: 1,
+        cover: 1,
+        videos: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .lean();
+
+    // fallback: якщо немає позначених — просто свіжі опубліковані
+    if (docs.length >= 3) return docs;
+
+    return this.caseModel
+      .find({ status: 'published' })
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .limit(n)
+      .select({
+        title: 1,
+        industry: 1,
+        categories: 1,
+        cover: 1,
+        videos: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .lean();
+  }
+
+  /** /api/cases/discover?category=&limit= */
+  public async discoverCases(opts: { category?: string; limit?: number }) {
+    const n = Math.max(1, Math.min(100, Number(opts?.limit) || 12));
+    const cat = opts?.category?.toLowerCase();
+
+    // якщо вже є батч popular — віддаємо його
+    const batched = await this.findDiscoverBatch({ category: cat, limit: n });
+    if (batched.length) return batched;
+
+    // fallback: просто опубліковані (опційно фільтр за категорією)
+    const q: any = { status: 'published' };
+    if (cat) q.categories = { $in: [cat] };
+
+    return this.caseModel
+      .find(q)
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .limit(n)
+      .select({
+        title: 1,
+        industry: 1,
+        categories: 1,
+        cover: 1,
+        videos: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .lean();
+  }
+
+  /** Позначити кейс для curated-черги (адмінська дія) — твоя поточна логіка */
+  public async addToCuratedQueue(params: { id: string; forceToday?: boolean }) {
+    const { id, forceToday } = params;
+    ensureObjectId(id);
+    const patch: Record<string, unknown> = {
+      popularQueued: true,
+      queuedAt: new Date(),
+    };
+    if (forceToday !== undefined) patch['forceToday'] = !!forceToday;
+
+    const doc = await this.caseModel
+      .findByIdAndUpdate(id, { $set: patch }, { new: true, runValidators: true })
+      .lean();
+
+    if (!doc) throw new NotFoundException('Case not found');
+    return { ok: true };
+  }
+
+  /**
+   * Сумісний метод під InternalController: markCuratedQueued(id, queued, forceToday?)
+   * Ставить/знімає одночасно:
+   *  - popularQueued/queuedAt
+   *  - curatedQueued/curatedQueuedAt
+   *  і прибирає популярні мітки, якщо повертаємо до черги.
+   */
+  public async markCuratedQueued(
+    id: string,
+    queued = true,
+    forceToday = false,
+  ): Promise<void> {
+    ensureObjectId(id);
+
+    if (queued) {
+      const now = new Date();
+      await this.caseModel.updateOne(
+        { _id: id },
+        {
+          $set: {
+            popularQueued: true,
+            queuedAt: now,
+            curatedQueued: true,
+            curatedQueuedAt: now,
+            ...(forceToday ? { forceToday: true } : {}),
+          },
+          // прибираємо активні popular-прапорці, якщо кейс повернули у чергу
+          $unset: { popularActive: '', popularBatchDate: '', popularPublishedAt: '' },
+        },
+        { runValidators: true },
+      );
+    } else {
+      await this.caseModel.updateOne(
+        { _id: id },
+        {
+          $unset: {
+            popularQueued: '',
+            queuedAt: '',
+            curatedQueued: '',
+            curatedQueuedAt: '',
+            forceToday: '',
+          },
+        },
+        { runValidators: true },
+      );
+    }
+  }
+
+  /**
+   * Опублікувати добовий батч популярних:
+   * 1) Спочатку всі queued з forceToday=true (за queuedAt, FIFO)
+   * 2) Далі звичайні queued (FIFO)
+   * В сумі не більше limit.
+   */
+  public async publishDailyPopularBatch(
+    limit: number,
+  ): Promise<{ published: number; batchDate: Date }> {
+    const n = Math.max(1, Math.min(50, Number(limit) || 8));
+    const batchDate = new Date();
+    // нормалізуємо до початку доби (UTC)
+    const startOfDay = new Date(Date.UTC(batchDate.getUTCFullYear(), batchDate.getUTCMonth(), batchDate.getUTCDate()));
+
+    // 1) Пріоритетні
+    const forced = await this.caseModel
+      .find({ popularQueued: true, popularActive: { $ne: true }, forceToday: true })
+      .sort({ queuedAt: 1, _id: 1 })
+      .limit(n)
+      .select({ _id: 1 })
+      .lean();
+
+    const remaining = n - forced.length;
+
+    // 2) Звичайні
+    const normal =
+      remaining > 0
+        ? await this.caseModel
+            .find({
+              popularQueued: true,
+              popularActive: { $ne: true },
+              $or: [{ forceToday: { $ne: true } }, { forceToday: { $exists: false } }],
+            })
+            .sort({ queuedAt: 1, _id: 1 })
+            .limit(remaining)
+            .select({ _id: 1 })
+            .lean()
+        : [];
+
+    const ids = [...forced, ...normal].map((d) => d._id);
+    if (!ids.length) return { published: 0, batchDate: startOfDay };
+
+    const now = new Date();
+
+    const res = await this.caseModel.updateMany(
+      { _id: { $in: ids } },
+      {
+        $set: {
+          popularActive: true,
+          popularBatchDate: startOfDay,
+          popularPublishedAt: now,
+          status: 'published', // гарантуємо видимість
+        },
+        $unset: { forceToday: '' },
+      },
+      { runValidators: true },
+    );
+
+    return { published: (res as any)?.modifiedCount || ids.length, batchDate: startOfDay };
   }
 }

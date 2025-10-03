@@ -1,19 +1,11 @@
 // cms/src/payload.config.ts
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { buildConfig } from 'payload'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { mongooseAdapter } from '@payloadcms/db-mongodb'
+import nodemailer from 'nodemailer' // ⬅️ додали
 
-// __dirname у ESM
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const mongoURL =
-  process.env.MONGODB_URI ||
-  process.env.DATABASE_URI ||
-  process.env.MONGO_URI
-
+const mongoURL = process.env.MONGODB_URI || process.env.DATABASE_URI || process.env.MONGO_URI
 if (!mongoURL) throw new Error('Missing MONGODB_URI / DATABASE_URI / MONGO_URI')
 if (!process.env.PAYLOAD_SECRET) throw new Error('Missing PAYLOAD_SECRET')
 
@@ -25,8 +17,18 @@ export default buildConfig({
 
   editor: lexicalEditor({}),
 
+  
+ email: () => ({
+  fromName: 'Payload Local',
+  fromAddress: 'noreply@local.test',
+  transport: nodemailer.createTransport({
+    streamTransport: true,  // не відправляє, а друкує лист у консоль
+    buffer: true,
+    newline: 'unix',
+  }),
+}),
+
   collections: [
-    // 1) Адміни Payload (вхід у /admin)
     {
       slug: 'admins',
       auth: { cookies: true },
@@ -42,7 +44,6 @@ export default buildConfig({
       ],
     },
 
-    // 2) Користувачі (auth керує Nest)
     {
       slug: 'users',
       admin: { useAsTitle: 'email' },
@@ -71,12 +72,11 @@ export default buildConfig({
       ],
     },
 
-    // 3) Кейси
     {
       slug: 'cases',
       admin: { useAsTitle: 'title' },
       access: {
-        read: () => true, // або тільки published
+        read: () => true,
         create: ({ req }) => req.user?.collection === 'admins',
         update: ({ req }) => req.user?.collection === 'admins',
         delete: ({ req }) => req.user?.collection === 'admins',
@@ -117,7 +117,7 @@ export default buildConfig({
           type: 'array',
           fields: [
             { name: 'provider', type: 'text', defaultValue: 'vimeo' },
-            { name: 'externalId', type: 'text' }, // vimeo video id
+            { name: 'externalId', type: 'text' },
             { name: 'status', type: 'select', options: ['queued', 'processing', 'ready', 'failed'], defaultValue: 'ready' },
             { name: 'url', type: 'text' },
           ],
@@ -137,9 +137,7 @@ export default buildConfig({
                   },
                   body: JSON.stringify({ id: doc.id }),
                 })
-              } catch {
-                // ignore network errors
-              }
+              } catch { /* ignore */ }
             }
           },
         ],
