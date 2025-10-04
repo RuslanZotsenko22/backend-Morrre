@@ -19,4 +19,15 @@ export class PopularScheduler {
     const res = await this.cases.publishDailyPopularBatch(N);
     this.log.log(`Published=${res.published}, batchDate=${res.batchDate?.toISOString()}`);
   }
+
+  // Щогодини знижуємо lifeScore у popular (можеш зробити */30 * * * * для кожні 30 хв)
+  @Cron('0 * * * *', { timeZone: 'Europe/Kyiv' })
+  async hourlyDecay() {
+    const DEC = Number(process.env.LIFE_DECAY_PER_HOUR ?? 5);
+    this.log.log(`Running hourly lifeScore decay DEC=${DEC}`);
+    const res = await this.cases.decayLifeScoresHourly({ onlyPopular: true, decay: DEC });
+    this.log.log(`Decay matched=${res.matched}, modified=${res.modified}`);
+  }
+
+
 }

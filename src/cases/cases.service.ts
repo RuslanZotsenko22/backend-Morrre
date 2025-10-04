@@ -445,31 +445,41 @@ export class CasesService implements OnModuleInit {
       .lean();
   }
 
-  /** Discover — повертає останній батч популярних (опційно фільтр за категорією) */
-  public async findDiscoverBatch(params: { category?: string; limit: number }) {
-    const { category, limit } = params;
+/** Discover — повертає останній батч популярних (опційно фільтр за категорією)
+ *  Сортування в батчі: lifeScore ↓, popularPublishedAt ↓
+ */
+public async findDiscoverBatch(params: { category?: string; limit: number }) {
+  const { category, limit } = params;
 
-    const latest = await this.caseModel
-      .findOne({ popularActive: true, popularBatchDate: { $ne: null } })
-      .sort({ popularBatchDate: -1 })
-      .select({ popularBatchDate: 1 })
-      .lean();
+  const latest = await this.caseModel
+    .findOne({ popularActive: true, popularBatchDate: { $ne: null } })
+    .sort({ popularBatchDate: -1 })
+    .select({ popularBatchDate: 1 })
+    .lean();
 
-    const batchDate = (latest as any)?.popularBatchDate;
-    if (!batchDate) return [];
+  const batchDate = (latest as any)?.popularBatchDate;
+  if (!batchDate) return [];
 
-    const q: any = { popularActive: true, popularBatchDate: batchDate };
+  const q: any = { popularActive: true, popularBatchDate: batchDate };
+  if (category) q.categories = { $in: [category.toLowerCase()] };
 
-    if (category) {
-      q.categories = { $in: [category.toLowerCase()] };
-    }
-
-    return this.caseModel
-      .find(q)
-      .sort({ popularPublishedAt: -1 })
-      .limit(limit)
-      .lean();
-  }
+  return this.caseModel
+    .find(q)
+    .sort({ lifeScore: -1, popularPublishedAt: -1, _id: 1 })
+    .limit(limit)
+    .select({
+      title: 1,
+      industry: 1,
+      categories: 1,
+      cover: 1,
+      videos: 1,
+      lifeScore: 1,
+      popularPublishedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    .lean();
+}
 
   /** /api/cases/popular-slides */
   public async getPopularSlides(limit = 6) {
@@ -509,34 +519,38 @@ export class CasesService implements OnModuleInit {
       .lean();
   }
 
-  /** /api/cases/discover?category=&limit= */
-  public async discoverCases(opts: { category?: string; limit?: number }) {
-    const n = Math.max(1, Math.min(100, Number(opts?.limit) || 12));
-    const cat = opts?.category?.toLowerCase();
+/** /api/cases/discover?category=&limit=
+ *  Якщо батч є — беремо його (сорт буде lifeScore ↓ у findDiscoverBatch)
+ *  Якщо батча немає — fallback: lifeScore ↓, updatedAt ↓
+ */
+public async discoverCases(opts: { category?: string; limit?: number }) {
+  const n = Math.max(1, Math.min(100, Number(opts?.limit) || 12));
+  const cat = opts?.category?.toLowerCase();
 
-    // якщо вже є батч popular — віддаємо його
-    const batched = await this.findDiscoverBatch({ category: cat, limit: n });
-    if (batched.length) return batched;
+  // якщо вже є батч popular — віддаємо його
+  const batched = await this.findDiscoverBatch({ category: cat, limit: n });
+  if (batched.length) return batched;
 
-    // fallback: просто опубліковані (опційно фільтр за категорією)
-    const q: any = { status: 'published' };
-    if (cat) q.categories = { $in: [cat] };
+  // fallback: просто опубліковані (опційно фільтр за категорією)
+  const q: any = { status: 'published' };
+  if (cat) q.categories = { $in: [cat] };
 
-    return this.caseModel
-      .find(q)
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .limit(n)
-      .select({
-        title: 1,
-        industry: 1,
-        categories: 1,
-        cover: 1,
-        videos: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      })
-      .lean();
-  }
+  return this.caseModel
+    .find(q)
+    .sort({ lifeScore: -1, updatedAt: -1, _id: 1 })
+    .limit(n)
+    .select({
+      title: 1,
+      industry: 1,
+      categories: 1,
+      cover: 1,
+      videos: 1,
+      lifeScore: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    .lean();
+}
 
   /** Позначити кейс для curated-черги (адмінська дія) — твоя поточна логіка */
   public async addToCuratedQueue(params: { id: string; forceToday?: boolean }) {
@@ -664,4 +678,229 @@ export class CasesService implements OnModuleInit {
 
     return { published: (res as any)?.modifiedCount || ids.length, batchDate: startOfDay };
   }
+
+  /**
+   * MVP-апдейт engagement + lifeScore.
+   * Вхідні інкременти опційні; lifeScore змінюється за вагами.
+   */
+  public async bumpEngagement(
+    id: string,
+    inc: { views?: number; saves?: number; shares?: number; refsLikes?: number },
+  ): Promise<{ ok: true; lifeScore: number }> {
+    ensureObjectId(id);
+
+    // Ваги (можеш винести в .env при бажанні)
+    const W = {
+      views: Number(process.env.LIFE_W_VIEWS ?? 0.2),
+      saves: Number(process.env.LIFE_W_SAVES ?? 3),
+      shares: Number(process.env.LIFE_W_SHARES ?? 4),
+      refsLikes: Number(process.env.LIFE_W_REFSLIKES ?? 2),
+      cap: Number(process.env.LIFE_CAP ?? 1000),
+    };
+
+    const incViews = Math.max(0, Math.floor(inc.views ?? 0));
+    const incSaves = Math.max(0, Math.floor(inc.saves ?? 0));
+    const incShares = Math.max(0, Math.floor(inc.shares ?? 0));
+    const incRefs = Math.max(0, Math.floor(inc.refsLikes ?? 0));
+
+    // lifeDelta = сума ваг * інкременти
+    const lifeDelta = (incViews * W.views) + (incSaves * W.saves) + (incShares * W.shares) + (incRefs * W.refsLikes);
+
+    // Атомарно підняти лічильники та lifeScore (із капом)
+    const doc = await this.caseModel.findById(id).select({ lifeScore: 1 }).lean();
+    if (!doc) throw new NotFoundException('Case not found');
+
+    const newScore = Math.min(W.cap, Math.max(0, (doc.lifeScore ?? 0) + lifeDelta));
+
+    await this.caseModel.updateOne(
+      { _id: id },
+      {
+        $inc: {
+          ...(incViews ? { views: incViews } : {}),
+          ...(incSaves ? { saves: incSaves } : {}),
+          ...(incShares ? { shares: incShares } : {}),
+          ...(incRefs ? { refsLikes: incRefs } : {}),
+        },
+        $set: { lifeScore: newScore },
+      },
+      { runValidators: true },
+    );
+
+    return { ok: true, lifeScore: newScore };
+  }
+
+  /**
+   * Годинний decay lifeScore (за замовчуванням — тільки у тих, хто в Popular).
+   * Значення зменшується, не опускаючись нижче 0.
+   */
+  public async decayLifeScoresHourly(
+    opts?: { onlyPopular?: boolean; decay?: number },
+  ): Promise<{ matched: number; modified: number }> {
+    const onlyPopular = opts?.onlyPopular ?? true;
+    const decay = Math.max(0, Number(opts?.decay ?? process.env.LIFE_DECAY_PER_HOUR ?? 5));
+
+    const q: any = { status: 'published' };
+    if (onlyPopular) q.popularActive = true;
+
+    // Зменшити lifeScore, але не нижче 0 — робимо через pipeline update
+    const res = await this.caseModel.updateMany(
+      q,
+      [
+        {
+          $set: {
+            lifeScore: {
+              $max: [
+                0,
+                { $subtract: ['$lifeScore', decay] },
+              ],
+            },
+          },
+        },
+      ] as any,
+      { strict: false },
+    );
+
+    return { matched: res.matchedCount ?? 0, modified: res.modifiedCount ?? 0 };
+  }
+
+
+    /**
+   * Зняти кейс з Popular.
+   * - Якщо returnToQueue=true — повертаємо до curated-черги (ставимо queuedAt=now, popularQueued=true)
+   * - Якщо false/не вказано — повністю прибираємо з черги.
+   * ВАЖЛИВО: статус кейсу ("published") не чіпаємо — кейс залишається опублікованим на платформі.
+   */
+  public async unpublishFromPopular(
+    id: string,
+    opts?: { returnToQueue?: boolean },
+  ): Promise<{ modified: number }> {
+    ensureObjectId(id);
+    const returnToQueue = !!opts?.returnToQueue;
+
+    const $set: Record<string, unknown> = {
+      popularActive: false,
+    };
+    const $unset: Record<string, unknown> = {
+      popularBatchDate: '',
+      popularPublishedAt: '',
+    };
+
+    if (returnToQueue) {
+      $set.popularQueued = true;
+      $set.queuedAt = new Date();
+      // якщо був forceToday — не чіпаємо, щоб можна було форснути знову за потреби
+    } else {
+      $set.popularQueued = false;
+      $unset.queuedAt = '';
+      $unset.forceToday = '';
+    }
+
+    const res = await this.caseModel.updateOne(
+      { _id: id },
+      { $set, $unset },
+      { runValidators: true },
+    );
+
+    return { modified: res.modifiedCount ?? 0 };
+  }
+
+  /** Зняти кейс із Popular.
+ *  keepQueued=true — залишити в curated-черзі (popularQueued=true, queuedAt не чіпаємо)
+ *  keepQueued=false — прибрати і з Popular, і з черги
+ */
+public async removeFromPopular(
+  id: string,
+  opts: { keepQueued?: boolean } = {},
+): Promise<{ ok: true; modified: number }> {
+  ensureObjectId(id);
+  const keepQueued = !!opts.keepQueued;
+
+  const $set: Record<string, any> = {
+    popularActive: false,
+  };
+  const $unset: Record<string, any> = {
+    popularBatchDate: '',
+    popularPublishedAt: '',
+    forceToday: '',
+  };
+
+  if (!keepQueued) {
+    $set.popularQueued = false;
+    $unset.queuedAt = '';
+  }
+
+  const res = await this.caseModel.updateOne(
+    { _id: id },
+    { $set, $unset },
+    { runValidators: true },
+  );
+
+  return { ok: true, modified: res.modifiedCount ?? 0 };
+}
+
+/** Позначити/зняти кейс як slide (featuredSlides) */
+public async setFeaturedSlide(id: string, featured: boolean) {
+  ensureObjectId(id);
+  const doc = await this.caseModel.findByIdAndUpdate(
+    id,
+    { $set: { featuredSlides: !!featured } },
+    { new: true, runValidators: true },
+  ).lean();
+  if (!doc) throw new NotFoundException('Case not found');
+  return { ok: true, featuredSlides: !!doc.featuredSlides };
+}
+
+/** Список queued-черги (для адмінки) */
+public async listCuratedQueue(params: { limit?: number; offset?: number }) {
+  const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+  const offset = Math.max(0, Number(params?.offset) || 0);
+
+  const [items, total] = await Promise.all([
+    this.caseModel
+      .find({ popularQueued: true, popularActive: { $ne: true } })
+      .sort({ queuedAt: 1 }) // FIFO
+      .skip(offset)
+      .limit(limit)
+      .select({
+        title: 1, cover: 1, categories: 1, industry: 1,
+        popularQueued: 1, queuedAt: 1, forceToday: 1, status: 1, updatedAt: 1,
+      })
+      .lean(),
+    this.caseModel.countDocuments({ popularQueued: true, popularActive: { $ne: true } }),
+  ]);
+
+  return { items, total, limit, offset };
+}
+
+/** Список активних у Popular (поточний/усі), для адмінки */
+public async listPopularActive(params: { limit?: number; offset?: number; batchDate?: string }) {
+  const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+  const offset = Math.max(0, Number(params?.offset) || 0);
+
+  const q: any = { popularActive: true };
+  if (params?.batchDate) {
+    // якщо передали точну дату батча (початок доби UTC)
+    const d = new Date(params.batchDate);
+    if (!isNaN(d.getTime())) q.popularBatchDate = d;
+  }
+
+  const [items, total] = await Promise.all([
+    this.caseModel
+      .find(q)
+      .sort({ popularBatchDate: -1, lifeScore: -1, popularPublishedAt: -1 })
+      .skip(offset)
+      .limit(limit)
+      .select({
+        title: 1, cover: 1, categories: 1, industry: 1,
+        popularActive: 1, popularBatchDate: 1, popularPublishedAt: 1,
+        lifeScore: 1, status: 1, updatedAt: 1,
+      })
+      .lean(),
+    this.caseModel.countDocuments(q),
+  ]);
+
+  return { items, total, limit, offset };
+}
+
+
 }

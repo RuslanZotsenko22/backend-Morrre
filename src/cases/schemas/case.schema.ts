@@ -50,7 +50,7 @@ export class Case {
     >;
   };
 
-  // відео-мета (status узгоджений з сервісом: є 'error')
+  // відео-мета
   @Prop({ type: [Object], default: [] })
   videos?: {
     vimeoId?: string;
@@ -96,6 +96,25 @@ export class Case {
   /** Фактичний час публікації у «Popular» */
   @Prop({ type: Date, index: true })
   popularPublishedAt?: Date;
+
+  // ===== MVP рейтинг/життя та лічильники взаємодій =====
+
+  /** “Життя” кейса: використовується для сортування/вигоряння у Popular */
+  @Prop({ type: Number, default: 100, min: 0, index: true })
+  lifeScore: number;
+
+  /** Лічильники взаємодій (накопичувальні) */
+  @Prop({ type: Number, default: 0 })
+  views: number;
+
+  @Prop({ type: Number, default: 0 })
+  saves: number;
+
+  @Prop({ type: Number, default: 0 })
+  shares: number;
+
+  @Prop({ type: Number, default: 0 })
+  refsLikes: number;
 }
 
 export const CaseSchema = SchemaFactory.createForClass(Case);
@@ -120,3 +139,10 @@ CaseSchema.index(
   { name: 'idx_popular_active_batch' }
 );
 CaseSchema.index({ popularQueued: 1, queuedAt: 1 }, { name: 'idx_popular_queue' });
+
+// Індекси для lifeScore/сортування у Popular
+CaseSchema.index({ lifeScore: -1 }, { name: 'idx_lifeScore_desc' });
+CaseSchema.index(
+  { popularActive: 1, lifeScore: -1, popularPublishedAt: -1 },
+  { name: 'idx_popular_rank' }
+);
