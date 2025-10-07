@@ -5,7 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Case, CaseSchema } from './schemas/case.schema';
 import { MediaModule } from '../media/media.module';
 import { QueueModule } from '../queue/queue.module';
-
+import { RedisCacheService } from '../common/redis/redis-cache.service'
 
 
 @Module({
@@ -15,7 +15,7 @@ import { QueueModule } from '../queue/queue.module';
     forwardRef(() => QueueModule), 
   ],
   controllers: [CasesController],
-  providers: [CasesService],
-  exports: [MongooseModule, CasesService], 
+  providers: [CasesService, RedisCacheService],
+  exports: [MongooseModule, CasesService, RedisCacheService], 
 })
 export class CasesModule {}

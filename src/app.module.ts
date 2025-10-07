@@ -11,6 +11,8 @@ import { QueueModule } from './queue/queue.module';
 import { VimeoModule } from './vimeo/vimeo.module';
 import { InternalModule } from './internal/internal.module';
 import { HomeModule } from './home/home.module';
+import { CollectionsModule } from './collections/collections.module';
+
 
 @Module({
   imports: [
@@ -34,6 +36,9 @@ import { HomeModule } from './home/home.module';
     VimeoModule,
     InternalModule,
     HomeModule,
+    CollectionsModule,
+    
+
   ],
 })
 export class AppModule {}

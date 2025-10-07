@@ -4,13 +4,18 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { CasesModule } from '../cases/cases.module';
 import { HomeController } from './home.controller';
 import { PopularScheduler } from './home.scheduler';
-
+import { InternalHomeController } from './internal-home.controller'
+import { RedisCacheService } from '../common/redis/redis-cache.service'
+import { ConfigModule } from '@nestjs/config'
+import { CollectionsModule } from '../collections/collections.module'
 @Module({
   imports: [
+    CollectionsModule,
     CasesModule,
-    ScheduleModule.forRoot(), // вмикаємо крон
+    ConfigModule,
+    ScheduleModule.forRoot(), 
   ],
-  controllers: [HomeController],
-  providers: [PopularScheduler], // планувальник щоденної публікації
+  controllers: [HomeController, InternalHomeController],
+  providers: [PopularScheduler, RedisCacheService], // планувальник щоденної публікації
 })
 export class HomeModule {}

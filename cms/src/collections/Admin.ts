@@ -3,7 +3,7 @@ import { CollectionConfig } from 'payload';
 
 export const Admins: CollectionConfig = {
   slug: 'admins',
-  auth: { cookies: true },
+   auth: true,
   admin: { useAsTitle: 'email' },
   access: {
     read: ({ req }) => !!req.user,       // бачать лише залогінені адміни
