@@ -28,6 +28,9 @@ import { VideoQueue } from '../queue/video.queue';
 
 import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
 
+
+
+
 @Controller('cases') // із глобальним prefix 'api' -> /api/cases
 export class CasesController {
   constructor(
@@ -129,5 +132,82 @@ async addVideo(
     await this.videoQueue.enqueueUpload({ caseId: id, filePath: file.path });
 
     return { queued: true, filename: file.filename };
+
+    
   }
+
+@Post(':id/vote')
+async voteCase(
+  @Param('id') id: string,
+  @Body()
+  body: {
+    userId: string
+    role: 'user' | 'jury'
+    design: number
+    creativity: number
+    content: number
+  },
+) {
+  return this.cases.voteCase(id, { id: body.userId, role: body.role }, body)
+}
+
+@Get(':id/votes')
+async getVotes(
+  @Param('id') id: string,
+  @Query('role') role?: 'user' | 'jury',
+  @Query('page') page?: string,
+  @Query('limit') limit?: string,
+  @Query('cursor') cursor?: string,
+) {
+  return this.cases.getCaseVotes({
+    caseId: id,
+    role,
+    page: Number(page),
+    limit: Number(limit),
+  })
+}
+  
+/** ---------------- UNIQUE VIEWS ---------------- */
+
+/**
+ * POST /api/cases/:id/view
+ * Body: { userId?: string, anonToken?: string }
+ * Повертає { unique: boolean, uniqueViews?: number }
+ */
+@Post(':id/view')
+async markView(
+  @Param('id') id: string,
+  @Body() body: { userId?: string; anonToken?: string },
+) {
+  return this.cases.markUniqueView(id, {
+    userId: body?.userId,
+    anonToken: body?.anonToken,
+  })
+}
+
+/** ---------------- CASE PAGE ---------------- */
+
+/** GET /api/cases/:id/similar */
+@Get(':id/similar')
+async similar(@Param('id') id: string, @Query('industry') industry?: string) {
+  return { items: await this.cases.getSimilarCases(id, industry) }
+}
+
+/** GET /api/cases/:idOrSlug
+ *  Опційно ?userId=... — тоді повертаємо myVote + ctaState
+ */
+@Get(':idOrSlug')
+async getCase(
+  @Param('idOrSlug') idOrSlug: string,
+  @Query('userId') userId?: string,
+) {
+  if (userId) {
+    return await this.cases.getCasePageForUser(idOrSlug, userId);
+  }
+  // беквард-сумісно: якщо userId не передали — повертаємо базовий кешований варіант
+  return await this.cases.getCasePage(idOrSlug);
+}
+
+
+
 }

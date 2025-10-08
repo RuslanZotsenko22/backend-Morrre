@@ -9,7 +9,9 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Case, CaseDocument } from './schemas/case.schema'
 import { Model, isValidObjectId } from 'mongoose'
 import { RedisCacheService } from '../common/redis/redis-cache.service'
-
+import { Collection, CollectionDocument } from '../collections/schemas/collection.schema';
+import { PaletteService } from './palette/palette.service'
+import { INDUSTRY_ENUM, WHAT_DONE_ENUM } from './schemas/case.schema'
 type CaseStatus = 'draft' | 'published'
 
 /** Обкладинка кейса (з підтримкою різних розмірів) */
@@ -108,7 +110,8 @@ function sanitizeCreateDto(
   status: CaseStatus
   tags: string[]
   categories: string[]
-  industry?: string // опційне
+  industry?: string
+  whatWasDone?: string[] // ✅ додаємо це поле
 } {
   const title = (dto.title ?? '').toString().trim()
   if (!title) throw new BadRequestException('title is required')
@@ -121,49 +124,83 @@ function sanitizeCreateDto(
 
   const tags = normalizeStringArray(dto.tags, 20)
   const categories = normalizeStringArray(dto.categories, 3)
-  const industry = dto.industry ? dto.industry.toString().trim() : undefined
 
-  return { title, description, status, tags, categories, industry }
+  // ✅ industry — перевірка по ENUM
+  const industry =
+    dto.industry && INDUSTRY_ENUM.includes(dto.industry as any)
+      ? (dto.industry as any)
+      : undefined
+
+  // ✅ whatWasDone — опційне поле, фільтруємо по ENUM
+  const whatWasDone = Array.isArray((dto as any).whatWasDone)
+    ? (dto as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
+    : []
+
+  return { title, description, status, tags, categories, industry, whatWasDone }
 }
+
+
 
 /** Очистка/нормалізація patch для оновлення кейса */
 function sanitizeUpdateDto(patch: UpdateCaseDto): UpdateCaseDto {
   const allowed: UpdateCaseDto = {}
+
   if (typeof patch.title === 'string') {
     const t = patch.title.trim()
     if (!t) throw new BadRequestException('title must be non-empty string')
     allowed.title = t
   }
+
   if (typeof patch.description === 'string') {
     allowed.description = patch.description
   }
+
   if (typeof patch.status === 'string') {
     if (!ALLOWED_STATUS.includes(patch.status as CaseStatus)) {
       throw new BadRequestException(`status must be one of: ${ALLOWED_STATUS.join(', ')}`)
     }
     allowed.status = patch.status as CaseStatus
   }
+
   if (patch.tags !== undefined) {
     allowed.tags = normalizeStringArray(patch.tags, 20)
   }
+
   if (patch.categories !== undefined) {
     allowed.categories = normalizeStringArray(patch.categories, 3)
   }
-  if (patch.industry !== undefined) {
-    allowed.industry = typeof patch.industry === 'string' ? patch.industry.trim() : undefined
+
+  // ✅ whatWasDone — перевіряємо, якщо є
+  if ((patch as any).whatWasDone !== undefined) {
+    (allowed as any).whatWasDone = Array.isArray((patch as any).whatWasDone)
+      ? (patch as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
+      : []
   }
+
+  // ✅ industry — перевірка по ENUM
+  if (patch.industry !== undefined) {
+    allowed.industry = INDUSTRY_ENUM.includes(patch.industry as any)
+      ? (patch.industry as any)
+      : undefined
+  }
+
   return allowed
 }
+
+
 
 @Injectable()
 export class CasesService implements OnModuleInit {
   private readonly ttlMs = 300_000 // 5 хв
   private readonly prefix = 'cases:' // префікс ключів у Redis
 
-  constructor(
-    @InjectModel(Case.name) private caseModel: Model<CaseDocument>,
-    private readonly cache: RedisCacheService,
-  ) {}
+constructor(
+  @InjectModel(Case.name) private caseModel: Model<CaseDocument>,
+  @InjectModel(Collection.name) private collectionModel: Model<CollectionDocument>,
+  private readonly cache: RedisCacheService,
+  private readonly palette: PaletteService, 
+) {}
+
 
   // ── Cache key helpers ──────────────────────────────────────────────────────
   private kById(id: string) {
@@ -449,6 +486,35 @@ export class CasesService implements OnModuleInit {
       await this.invalidateById(id)
     }
   }
+
+  /** витягнути список URL зображень з кейса (cover + blocks.media:image) */
+private collectImageUrlsFromCase(caseDoc: any): string[] {
+  const urls: string[] = []
+  // cover
+  const coverUrl = caseDoc?.cover?.url
+  if (typeof coverUrl === 'string' && coverUrl.trim()) urls.push(coverUrl.trim())
+  const sizes = caseDoc?.cover?.sizes
+  if (sizes && typeof sizes === 'object') {
+    for (const v of Object.values(sizes)) {
+      const u = typeof v === 'string' ? v : (v as any)?.url
+      if (typeof u === 'string' && u.trim()) urls.push(u.trim())
+    }
+  }
+  // blocks
+  const blocks = Array.isArray(caseDoc?.blocks) ? caseDoc.blocks : []
+  for (const b of blocks) {
+    if (!b || typeof b !== 'object') continue
+    if (b.kind === 'media' && Array.isArray(b.media)) {
+      for (const m of b.media) {
+        if (m?.type === 'image' && typeof m?.url === 'string' && m.url.trim()) {
+          urls.push(m.url.trim())
+        }
+      }
+    }
+  }
+  return urls
+}
+
 
   /** Синх із документа, отриманого через Payload REST (із depth/relations) */
   public async syncFromPayload(doc: any): Promise<void> {
@@ -1040,5 +1106,439 @@ export class CasesService implements OnModuleInit {
     ])
 
     return { items, total, limit, offset }
+
+
   }
+
+  /** ---------------- VOTES ---------------- */
+
+/**
+ * Голосування за кейс
+ * @param caseId id кейса
+ * @param user користувач (id + role)
+ * @param scores об'єкт { design, creativity, content }
+ */
+async voteCase(
+  caseId: string,
+  user: { id: string; role: 'user' | 'jury' },
+  scores: { design: number; creativity: number; content: number },
+) {
+  if (!isValidObjectId(caseId)) throw new BadRequestException('Invalid caseId')
+  if (!isValidObjectId(user.id)) throw new BadRequestException('Invalid userId')
+
+  const design = Math.min(10, Math.max(0, Number(scores.design)))
+  const creativity = Math.min(10, Math.max(0, Number(scores.creativity)))
+  const content = Math.min(10, Math.max(0, Number(scores.content)))
+  const overall = Math.round(((design + creativity + content) / 3) * 10) / 10
+
+  const voteModel = this.caseModel.db.model('CaseVote')
+  await voteModel.updateOne(
+    { caseId, userId: user.id },
+    { $set: { design, creativity, content, overall, voterRole: user.role } },
+    { upsert: true },
+  )
+
+  // оновлюємо середній бейдж у кейсі
+  const agg = await voteModel.aggregate([
+    { $match: { caseId: new (require('mongoose').Types.ObjectId)(caseId) } },
+    {
+      $group: {
+        _id: null,
+        design: { $avg: '$design' },
+        creativity: { $avg: '$creativity' },
+        content: { $avg: '$content' },
+        overall: { $avg: '$overall' },
+      },
+    },
+  ])
+
+  if (agg.length) {
+    const avg = agg[0]
+    await this.caseModel.updateOne(
+      { _id: caseId },
+      { $set: { badge: avg } },
+      { runValidators: false },
+    )
+  }
+
+  return { ok: true, overall }
+}
+
+/**
+ * Отримати список голосів по кейсу
+ */
+async getCaseVotes(params: {
+  caseId: string
+  role?: 'user' | 'jury'
+  page?: number
+  limit?: number
+}) {
+  const { caseId, role } = params
+  if (!isValidObjectId(caseId)) throw new BadRequestException('Invalid caseId')
+
+  const page = Math.max(1, Number(params.page) || 1)
+  const limit = Math.min(50, Math.max(1, Number(params.limit) || 12))
+  const skip = (page - 1) * limit
+
+  const voteModel = this.caseModel.db.model('CaseVote')
+
+  const filter: any = { caseId }
+  if (role) filter.voterRole = role
+
+  const [items, total] = await Promise.all([
+    voteModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+       .populate('userId', 'name avatar roles teamName')
+      .lean(),
+    voteModel.countDocuments(filter),
+  ])
+
+  return { items, total, page, limit }
+
+}
+
+/** ---------------- UNIQUE VIEWS ---------------- */
+
+/**
+ * Позначити унікальний перегляд кейса.
+ * - Якщо є userId → унікальність по userId
+ * - Якщо гість → унікальність по anonToken (cookie/uuid)
+ * Повертає: { unique: boolean, uniqueViews?: number }
+ */
+async markUniqueView(
+  caseId: string,
+  opts: { userId?: string; anonToken?: string },
+): Promise<{ unique: boolean; uniqueViews?: number }> {
+  if (!isValidObjectId(caseId)) throw new BadRequestException('Invalid caseId')
+
+  const userId = opts?.userId && isValidObjectId(opts.userId) ? opts.userId : undefined
+  const anonToken = !userId && typeof opts?.anonToken === 'string' ? (opts.anonToken.trim() || undefined) : undefined
+
+  // якщо немає жодного ідентифікатора — не інкрементимо
+  if (!userId && !anonToken) {
+    return { unique: false }
+  }
+
+  // використовуємо зареєстровану модель CaseView (через підключену в модулі схему)
+  const caseViewModel = this.caseModel.db.model('CaseView')
+
+  try {
+    // пробуємо створити запис перегляду
+    await caseViewModel.create({
+      caseId,
+      ...(userId ? { userId } : { anonToken }),
+    })
+
+    // якщо новий запис створено — інкрементимо лічильник uniqueViews у кейсі
+    const res = await this.caseModel.findByIdAndUpdate(
+      caseId,
+      { $inc: { uniqueViews: 1 } },
+      { new: true, projection: { uniqueViews: 1 } as any },
+    ).lean()
+
+    return { unique: true, uniqueViews: (res as any)?.uniqueViews ?? undefined }
+  } catch {
+    // duplicate key → уже рахували цей перегляд (для цього userId/anonToken)
+    return { unique: false }
+  }
+}
+
+/** ---------------- CASE PAGE (detail) ---------------- */
+
+private isObjectIdLike(v: string) {
+  return typeof v === 'string' && /^[0-9a-fA-F]{24}$/.test(v.trim());
+}
+
+/**
+ * Детальна сторінка кейса за id або slug.
+ * Повертає: сам кейс (з owner/contributors), колекції, moreFromAuthor, similar
+ * Кеш: 2 хвилини.
+ */
+async getCasePage(idOrSlug: string) {
+  const cacheKey = `cases:page:${idOrSlug}`;
+  const hit = await this.cache.get<any>(cacheKey);
+  if (hit) return hit;
+
+  // 1) сам кейс + власник + контриб'ютори
+  const match = this.isObjectIdLike(idOrSlug)
+    ? { _id: idOrSlug }
+    : { slug: idOrSlug };
+
+  const caseDoc = await this.caseModel
+    .findOne(match)
+    .populate('ownerId', 'name avatar email roles')
+    .populate('contributors.userId', 'name avatar roles')
+    .lean();
+
+  if (!caseDoc) throw new NotFoundException('Case not found');
+
+  // 2) колекції, до яких входить кейс (титул + slug)
+  const collections = await this.collectionModel
+    .find({ cases: caseDoc._id }, { title: 1, slug: 1 })
+    .sort({ order: 1, updatedAt: -1 })
+    .lean();
+
+  // 3) more from author
+  const ownerId =
+    typeof caseDoc.ownerId === 'object' && caseDoc.ownerId !== null
+      ? String((caseDoc.ownerId as any)._id)
+      : String(caseDoc.ownerId);
+
+  const ownerCount = await this.caseModel.countDocuments({ ownerId, status: 'published' });
+
+  let moreFromAuthor: any[] = [];
+  if (ownerCount >= 3) {
+    moreFromAuthor = await this.caseModel
+      .find({ ownerId, status: 'published', _id: { $ne: caseDoc._id } })
+      .sort({ updatedAt: -1, _id: -1 })
+      .limit(6)
+      .select({
+        title: 1, industry: 1, categories: 1, tags: 1,
+        cover: 1, videos: 1, status: 1, lifeScore: 1,
+        createdAt: 1, updatedAt: 1, publishedAt: 1,
+      })
+      .lean();
+  } else {
+    const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
+    moreFromAuthor = await this.caseModel
+      .find({
+        status: 'published',
+        industry: caseDoc.industry,
+        popularPublishedAt: { $gte: monthAgo },
+        _id: { $ne: caseDoc._id },
+      })
+      .sort({ lifeScore: -1, popularPublishedAt: -1, _id: 1 })
+      .limit(6)
+      .select({
+        title: 1, industry: 1, categories: 1, tags: 1,
+        cover: 1, videos: 1, status: 1, lifeScore: 1,
+        createdAt: 1, updatedAt: 1,
+      })
+      .lean();
+  }
+
+  // 4) similar (4 шт, популярні за місяць у тій же індустрії)
+  const similar = await this.getSimilarCases(String(caseDoc._id), String(caseDoc.industry));
+
+  // --- 5) ЛЕДАЧА побудова palette[] якщо її ще нема ---
+  try {
+    const hasPalette = Array.isArray((caseDoc as any).palette) && (caseDoc as any).palette.length > 0;
+    if (!hasPalette) {
+      const imgUrls = this.collectImageUrlsFromCase(caseDoc);
+      const palette = await this.palette.buildPalette(imgUrls, 8);
+      if (palette.length) {
+        // зберігаємо в БД для майбутніх звернень
+        await this.caseModel.updateOne(
+          { _id: caseDoc._id },
+          { $set: { palette } },
+          { runValidators: false },
+        );
+        (caseDoc as any).palette = palette;
+        // (опційно) можна було б інваліднути вже існуючий кеш id-версії:
+        // await this.cache.del(`cases:page:${String(caseDoc._id)}`);
+      }
+    }
+  } catch {
+    // не блокуємо відповідь, якщо щось пішло не так
+  }
+
+  const data = { ...caseDoc, collections, moreFromAuthor, similar };
+
+  await this.cache.set(cacheKey, data, 120_000); // 2 хв
+  return data;
+}
+
+
+/** Схожі кейси (4 шт) — популярні за місяць тієї ж індустрії, без поточного кейса */
+async getSimilarCases(caseId: string, industry?: string) {
+  const cacheKey = `cases:similar:${caseId}`;
+  const hit = await this.cache.get<any[]>(cacheKey);
+  if (hit) return hit;
+
+  const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+  const q: any = {
+    status: 'published',
+    _id: { $ne: caseId },
+    popularPublishedAt: { $gte: monthAgo },
+  };
+  if (industry) q.industry = industry;
+
+  const items = await this.caseModel
+    .find(q)
+    .sort({ lifeScore: -1, popularPublishedAt: -1, _id: 1 })
+    .limit(4)
+    .select({
+      title: 1, industry: 1, categories: 1, tags: 1,
+      cover: 1, videos: 1, status: 1, lifeScore: 1,
+      createdAt: 1, updatedAt: 1,
+    })
+    .lean();
+
+  await this.cache.set(cacheKey, items, 120_000);
+  return items;
+}
+
+/**
+ * Курсорна пагінація голосів.
+ * cursor — ISO-строка createdAt останнього елемента з попередньої сторінки.
+ */
+async getCaseVotesCursor(params: {
+  caseId: string
+  role?: 'user' | 'jury'
+  limit?: number
+  cursor?: string // ISO date (createdAt)
+}) {
+  const { caseId, role } = params
+  if (!isValidObjectId(caseId)) throw new BadRequestException('Invalid caseId')
+
+  const limit = Math.min(50, Math.max(1, Number(params.limit) || 12))
+  const cursorDate = params.cursor ? new Date(params.cursor) : null
+  if (params.cursor && isNaN(cursorDate!.getTime())) {
+    throw new BadRequestException('Invalid cursor')
+  }
+
+  const voteModel = this.caseModel.db.model('CaseVote')
+
+  const filter: any = { caseId }
+  if (role) filter.voterRole = role
+  if (cursorDate) {
+    filter.createdAt = { $lt: cursorDate }
+  }
+
+  const items = await voteModel
+    .find(filter)
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(limit)
+    .populate('userId', 'name avatar roles teamName')
+    .lean()
+
+  const nextCursor = items.length
+    ? new Date(items[items.length - 1].createdAt).toISOString()
+    : null
+
+  return {
+    items: items.map((v: any) => ({
+      id: String(v._id),
+      user: v.userId ? {
+        id: String(v.userId._id || v.userId),
+        name: (v.userId as any)?.name ?? null,
+        avatar: (v.userId as any)?.avatar ?? null,
+        roles: (v.userId as any)?.roles ?? [],
+        teamName: (v.userId as any)?.teamName ?? null,
+      } : null,
+      design: v.design,
+      creativity: v.creativity,
+      content: v.content,
+      overall: v.overall,
+      role: v.voterRole,
+      createdAt: v.createdAt,
+    })),
+    nextCursor,
+    limit,
+  }
+}
+
+/**
+ * Детальна сторінка кейса з урахуванням користувача (myVote + CTA).
+ * Базові дані беруться з кешованого getCasePage(idOrSlug), а user-specific поля не кешуються.
+ */
+async getCasePageForUser(idOrSlug: string, userId?: string) {
+  // 1) базові дані (кешовані)
+  const base = await this.getCasePage(idOrSlug);
+
+  // 2) за замовчуванням без персоналізації
+  let myVote: null | {
+    design: number;
+    creativity: number;
+    content: number;
+    overall: number;
+    role?: 'user' | 'jury';
+  } = null;
+
+  if (userId && isValidObjectId(userId)) {
+    type VoteLean = {
+      _id: any;
+      userId: any;
+      caseId: any;
+      design: number;
+      creativity: number;
+      content: number;
+      overall: number;
+      voterRole: 'user' | 'jury';
+      createdAt: Date;
+    };
+
+    const voteModel = this.caseModel.db.model('CaseVote');
+    const caseId = String((base as any)?._id || (base as any)?.id);
+    if (caseId && isValidObjectId(caseId)) {
+      const v = (await voteModel.findOne({ caseId, userId }).lean()) as VoteLean | null;
+      if (v) {
+        myVote = {
+          design: v.design,
+          creativity: v.creativity,
+          content: v.content,
+          overall: v.overall,
+          role: v.voterRole,
+        };
+      }
+    }
+  }
+
+  // 3) badgeLabel — зручно віддати одразу для фронту
+  const avgOverall: number | undefined = (base as any)?.badge?.overall;
+  const badgeLabel =
+    typeof avgOverall === 'number'
+      ? avgOverall < 7
+        ? 'regular'
+        : avgOverall < 8
+        ? 'interesting'
+        : 'outstanding'
+      : null;
+
+  // 4) CTA стан:
+  const ctaState = myVote ? 'review' : 'review-and-score';
+
+  return { ...base, myVote, badgeLabel, ctaState };
+}
+
+/** Форс-побудова palette[] для кейса */
+public async rebuildPalette(caseId: string, opts?: { force?: boolean }) {
+  if (!this.isObjectIdLike(caseId)) {
+    throw new BadRequestException('Invalid caseId');
+  }
+
+  const doc = await this.caseModel.findById(caseId).lean();
+  if (!doc) throw new NotFoundException('Case not found');
+
+  const hasPalette = Array.isArray((doc as any).palette) && (doc as any).palette.length > 0;
+  if (hasPalette && !opts?.force) {
+    return { ok: true, palette: (doc as any).palette, skipped: true };
+  }
+
+  const urls = this.collectImageUrlsFromCase(doc);
+  const palette = await this.palette.buildPalette(urls, 8);
+
+  if (palette.length) {
+    await this.caseModel.updateOne(
+      { _id: caseId },
+      { $set: { palette } },
+      { runValidators: false },
+    );
+    // інваліднемо кеш детальної сторінки за id і за slug (якщо є)
+    await this.cache.del(`cases:page:${caseId}`);
+    if (typeof (doc as any).slug === 'string') {
+      await this.cache.del(`cases:page:${(doc as any).slug}`);
+    }
+  }
+
+  return { ok: true, palette, skipped: false };
+}
+
+
+
+
 }
