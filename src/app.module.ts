@@ -12,8 +12,9 @@ import { VimeoModule } from './vimeo/vimeo.module';
 import { InternalModule } from './internal/internal.module';
 import { HomeModule } from './home/home.module';
 import { CollectionsModule } from './collections/collections.module';
-
-
+import { HireModule } from './hire/hire.module'
+import { VotesModule } from './votes/votes.module'
+import { FollowsModule } from './users/follows.module'
 @Module({
   imports: [
     // робимо конфіг глобальним, щоб .env підхоплювався всюди
@@ -37,7 +38,9 @@ import { CollectionsModule } from './collections/collections.module';
     InternalModule,
     HomeModule,
     CollectionsModule,
-    
+     HireModule,
+     VotesModule,
+     FollowsModule,
 
   ],
 })

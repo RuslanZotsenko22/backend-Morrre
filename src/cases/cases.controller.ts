@@ -28,8 +28,8 @@ import { VideoQueue } from '../queue/video.queue';
 
 import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
 
-
-
+// ✅ (ДОДАНО) Swagger-декоратори для опису нових ендпоїнтів
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 @Controller('cases') // із глобальним prefix 'api' -> /api/cases
 export class CasesController {
@@ -63,26 +63,26 @@ export class CasesController {
 
   // Звужуємо :id до валідного ObjectId, щоб не ловити статичні шляхи
   @Get(':id')
-findOne(@Param('id', new ParseObjectIdPipe()) id: string) {
-  return this.cases.findPublicById(id);
-}
+  findOne(@Param('id', new ParseObjectIdPipe()) id: string) {
+    return this.cases.findPublicById(id);
+  }
 
   @UseGuards(JwtAuthGuard)
-@Patch(':id')
-update(@Req() req, @Param('id', new ParseObjectIdPipe()) id: string, @Body() dto: UpdateCaseDto) {
-  return this.cases.updateOwned(req.user.userId, id, dto);
-}
+  @Patch(':id')
+  update(@Req() req, @Param('id', new ParseObjectIdPipe()) id: string, @Body() dto: UpdateCaseDto) {
+    return this.cases.updateOwned(req.user.userId, id, dto);
+  }
 
   // ===== Cover: файл АБО JSON url =====
- @UseGuards(JwtAuthGuard)
-@Post(':id/cover')
-@UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-async uploadCover(
-  @Req() req,
-  @Param('id', new ParseObjectIdPipe()) id: string,
-  @UploadedFile() file: Express.Multer.File,
-  @Body() body: any,
-) {
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/cover')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadCover(
+    @Req() req,
+    @Param('id', new ParseObjectIdPipe()) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: any,
+  ) {
     const userId = req.user?.userId ?? req.user?.id ?? req.user?.sub;
 
     if (body?.url && typeof body.url === 'string') {
@@ -110,14 +110,14 @@ async uploadCover(
   }
 
   // ===== Video: зберігаємо на диск, кидаємо у BullMQ =====
- @UseGuards(JwtAuthGuard)
-@Post(':id/videos')
-@UseInterceptors(FileInterceptor('file', uploadVideoMulter))
-async addVideo(
-  @Req() req,
-  @Param('id', new ParseObjectIdPipe()) id: string,
-  @UploadedFile() file: Express.Multer.File,
-) {
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/videos')
+  @UseInterceptors(FileInterceptor('file', uploadVideoMulter))
+  async addVideo(
+    @Req() req,
+    @Param('id', new ParseObjectIdPipe()) id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     if (!file?.path) {
       throw new BadRequestException('Video file is required (form-data field "file")');
     }
@@ -132,82 +132,99 @@ async addVideo(
     await this.videoQueue.enqueueUpload({ caseId: id, filePath: file.path });
 
     return { queued: true, filename: file.filename };
-
-    
   }
 
-@Post(':id/vote')
-async voteCase(
-  @Param('id') id: string,
-  @Body()
-  body: {
-    userId: string
-    role: 'user' | 'jury'
-    design: number
-    creativity: number
-    content: number
-  },
-) {
-  return this.cases.voteCase(id, { id: body.userId, role: body.role }, body)
-}
+  @Post(':id/vote')
+  async voteCase(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      userId: string
+      role: 'user' | 'jury'
+      design: number
+      creativity: number
+      content: number
+    },
+  ) {
+    return this.cases.voteCase(id, { id: body.userId, role: body.role }, body)
+  }
 
-@Get(':id/votes')
-async getVotes(
-  @Param('id') id: string,
-  @Query('role') role?: 'user' | 'jury',
-  @Query('page') page?: string,
-  @Query('limit') limit?: string,
-  @Query('cursor') cursor?: string,
-) {
-  return this.cases.getCaseVotes({
-    caseId: id,
-    role,
-    page: Number(page),
-    limit: Number(limit),
-  })
-}
+  @Get(':id/votes')
+  async getVotes(
+    @Param('id') id: string,
+    @Query('role') role?: 'user' | 'jury',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.cases.getCaseVotes({
+      caseId: id,
+      role,
+      page: Number(page),
+      limit: Number(limit),
+    })
+  }
   
-/** ---------------- UNIQUE VIEWS ---------------- */
+  /** ---------------- UNIQUE VIEWS ---------------- */
 
-/**
- * POST /api/cases/:id/view
- * Body: { userId?: string, anonToken?: string }
- * Повертає { unique: boolean, uniqueViews?: number }
- */
-@Post(':id/view')
-async markView(
-  @Param('id') id: string,
-  @Body() body: { userId?: string; anonToken?: string },
-) {
-  return this.cases.markUniqueView(id, {
-    userId: body?.userId,
-    anonToken: body?.anonToken,
-  })
-}
-
-/** ---------------- CASE PAGE ---------------- */
-
-/** GET /api/cases/:id/similar */
-@Get(':id/similar')
-async similar(@Param('id') id: string, @Query('industry') industry?: string) {
-  return { items: await this.cases.getSimilarCases(id, industry) }
-}
-
-/** GET /api/cases/:idOrSlug
- *  Опційно ?userId=... — тоді повертаємо myVote + ctaState
- */
-@Get(':idOrSlug')
-async getCase(
-  @Param('idOrSlug') idOrSlug: string,
-  @Query('userId') userId?: string,
-) {
-  if (userId) {
-    return await this.cases.getCasePageForUser(idOrSlug, userId);
+  /**
+   * POST /api/cases/:id/view
+   * Body: { userId?: string, anonToken?: string }
+   * Повертає { unique: boolean, uniqueViews?: number }
+   */
+  @Post(':id/view')
+  async markView(
+    @Param('id') id: string,
+    @Body() body: { userId?: string; anonToken?: string },
+  ) {
+    return this.cases.markUniqueView(id, {
+      userId: body?.userId,
+      anonToken: body?.anonToken,
+    })
   }
-  // беквард-сумісно: якщо userId не передали — повертаємо базовий кешований варіант
-  return await this.cases.getCasePage(idOrSlug);
+
+  /** ---------------- CASE PAGE ---------------- */
+
+  /** GET /api/cases/:id/similar */
+  @Get(':id/similar')
+  async similar(@Param('id') id: string, @Query('industry') industry?: string) {
+    return { items: await this.cases.getSimilarCases(id, industry) }
+  }
+
+  // ✅ (ДОДАНО) Більше кейсів від автора або популярні за місяць — за правилами ТЗ
+  //    Якщо у автора <3 кейсів → популярні за місяць у тій же індустрії
+  //    Якщо ≥3 → останні кейси автора (без поточного)
+  @Get(':id/more-from-author')
+  @ApiOperation({ summary: 'Більше кейсів від автора (fallback: популярні за місяць у тій же індустрії)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'К-сть елементів, за замовчуванням 6 (макс. 12)' })
+  async moreFromAuthor(
+    @Param('id') id: string,
+    @Query('limit') limit = '6',
+  ) {
+    const limitNum = Math.min(Math.max(Number(limit) || 6, 1), 12);
+    return this.cases.moreFromAuthor(id, limitNum);
+  }
+
+  /** GET /api/cases/:idOrSlug
+   *  Опційно ?userId=... — тоді повертаємо myVote + ctaState
+   */
+  @Get(':idOrSlug')
+  async getCase(
+    @Param('idOrSlug') idOrSlug: string,
+    @Query('userId') userId?: string,
+  ) {
+    if (userId) {
+      return await this.cases.getCasePageForUser(idOrSlug, userId);
+    }
+    // беквард-сумісно: якщо userId не передали — повертаємо базовий кешований варіант
+    return await this.cases.getCasePage(idOrSlug);
+  }
+
+  @Get(':id/authors')
+@ApiOperation({ summary: 'Автори та співавтори кейса (with isPro, isFollowing)' })
+async authors(@Param('id') id: string, @Req() req: any) {
+  const currentUserId = req?.user?.userId || req?.user?._id || req?.user?.id || null
+  return this.cases.authorsForCase(id, currentUserId)
 }
-
-
 
 }

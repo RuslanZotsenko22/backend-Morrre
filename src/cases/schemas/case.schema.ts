@@ -187,6 +187,13 @@ export class Case {
   // --- Унікальні перегляди (число) ---
   @Prop({ type: Number, default: 0 })
   viewsUnique!: number;
+
+  @Prop({ type: Number, default: 0 })
+juryAvgOverall!: number
+
+@Prop({ type: String, enum: ['regular','interesting','outstanding'], default: 'regular' })
+juryBadge!: 'regular' | 'interesting' | 'outstanding'
+
 }
 
 export const CaseSchema = SchemaFactory.createForClass(Case);

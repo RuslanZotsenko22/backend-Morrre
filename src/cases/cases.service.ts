@@ -7,11 +7,15 @@ import {
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Case, CaseDocument } from './schemas/case.schema'
-import { Model, isValidObjectId } from 'mongoose'
+import { Model, isValidObjectId,Types } from 'mongoose'
 import { RedisCacheService } from '../common/redis/redis-cache.service'
 import { Collection, CollectionDocument } from '../collections/schemas/collection.schema';
 import { PaletteService } from './palette/palette.service'
 import { INDUSTRY_ENUM, WHAT_DONE_ENUM } from './schemas/case.schema'
+import { Follow, FollowDocument } from '../users/schemas/follow.schema'
+import { User, UserDocument } from '../users/schemas/user.schema'
+import { CaseVote, CaseVoteDocument } from './schemas/case-vote.schema';
+
 type CaseStatus = 'draft' | 'published'
 
 /** Обкладинка кейса (з підтримкою різних розмірів) */
@@ -195,12 +199,126 @@ export class CasesService implements OnModuleInit {
   private readonly prefix = 'cases:' // префікс ключів у Redis
 
 constructor(
-  @InjectModel(Case.name) private caseModel: Model<CaseDocument>,
-  @InjectModel(Collection.name) private collectionModel: Model<CollectionDocument>,
+  @InjectModel(Case.name)        private caseModel: Model<CaseDocument>,
+  @InjectModel(User.name)        private userModel: Model<UserDocument>,
+  @InjectModel(Follow.name)      private followModel: Model<FollowDocument>,
+  @InjectModel(Collection.name)  private collectionModel: Model<CollectionDocument>,
+  @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>, // ⬅️ додано
   private readonly cache: RedisCacheService,
-  private readonly palette: PaletteService, 
+  private readonly palette: PaletteService,
 ) {}
 
+
+/** Стан CTA з урахуванням того, чи голосував user */
+private async computeCtaState(caseId: Types.ObjectId, userId?: string | null) {
+  if (!userId || !Types.ObjectId.isValid(userId)) return 'review_and_score' as const;
+  const voted = await this.caseVoteModel.exists({
+    caseId: caseId,
+    userId: new Types.ObjectId(userId),
+  });
+  return voted ? ('review' as const) : ('review_and_score' as const);
+}
+
+/** Побудова мета-блоку для шапки кейса за вимогами 7.3 */
+private async buildMetaForHeader(opts: {
+  caseDoc: any,                 // кейс з already-populated owner/contributors (як у твоєму getCasePage*)
+  userId?: string | null,       // поточний користувач (може бути відсутній)
+}) {
+  const { caseDoc, userId } = opts;
+
+  const cover =
+    caseDoc?.cover?.url ||
+    caseDoc?.cover?.sizes?.mid ||
+    caseDoc?.cover?.sizes?.full ||
+    null;
+
+  const title = caseDoc?.title || '';
+
+  // автори: owner + contributors (як у твоєму getCasePage)
+  const owner = caseDoc?.owner || caseDoc?.ownerId || null;
+  const contributorsArr = Array.isArray(caseDoc?.contributors) ? caseDoc.contributors : [];
+
+  // нормалізуємо список авторів для шапки (id, name, avatar)
+  const norm = (u: any) => ({
+    id: u?._id?.toString?.() || u?.id || '',
+    name: u?.name || u?.teamName || 'User',
+    avatar: u?.avatar || null,
+  });
+
+  const authors = [
+    ...(owner ? [norm(owner)] : []),
+    ...contributorsArr
+      .map((c: any) => ('user' in c ? c.user : (c.userId || c))) // під різні варіанти збереження
+      .filter(Boolean)
+      .map(norm),
+  ];
+
+  const singleAuthorEmail =
+    authors.length === 1
+      ? (owner?.email || owner?.contactEmail || null)
+      : null;
+
+  const ctaState = await this.computeCtaState(caseDoc._id, userId);
+
+  return {
+    cover,
+    title,
+    authors,
+    singleAuthorEmail,
+    ctaState, // 'review' | 'review_and_score'
+  };
+}
+
+
+
+async authorsForCase(caseId: string, currentUserId?: string | null) {
+  if (!Types.ObjectId.isValid(caseId)) throw new BadRequestException('Invalid caseId')
+
+  const cur = await this.caseModel.findById(caseId, { ownerId: 1, contributors: 1 }).lean()
+  if (!cur) throw new BadRequestException('Case not found')
+
+  const ids = [
+    cur.ownerId,
+    ...(Array.isArray(cur.contributors) ? cur.contributors.map((c: any) => c.userId || c) : []),
+  ].filter(Boolean)
+
+  const users = await this.userModel.find(
+    { _id: { $in: ids } },
+    { name: 1, avatar: 1, roles: 1, role: 1, isPro: 1 }
+  ).lean()
+
+  let followSet = new Set<string>()
+  if (currentUserId && Types.ObjectId.isValid(currentUserId)) {
+    const rows = await this.followModel.find(
+      { userId: new Types.ObjectId(currentUserId), targetUserId: { $in: ids } },
+      { targetUserId: 1 }
+    ).lean()
+    followSet = new Set(rows.map(r => r.targetUserId.toString()))
+  }
+
+  const normalizeIsPro = (u: any) =>
+    typeof u.isPro === 'boolean'
+      ? u.isPro
+      : (Array.isArray(u.roles) && u.roles.includes('pro')) || (u.role === 'pro')
+
+  const mapUser = (u: any) => ({
+    id: u._id.toString(),
+    name: u.name || 'User',
+    avatar: u.avatar || null,
+    isPro: !!normalizeIsPro(u),
+    isFollowing: currentUserId && currentUserId !== u._id.toString()
+      ? followSet.has(u._id.toString())
+      : false,
+  })
+
+  const owner = users.find(u => u._id.toString() === cur.ownerId.toString())
+  const contributors = users.filter(u => u._id.toString() !== cur.ownerId.toString())
+
+  return {
+    owner: owner ? mapUser(owner) : null,
+    contributors: contributors.map(mapUser),
+  }
+}
 
   // ── Cache key helpers ──────────────────────────────────────────────────────
   private kById(id: string) {
@@ -1459,32 +1577,25 @@ async getCasePageForUser(idOrSlug: string, userId?: string) {
     role?: 'user' | 'jury';
   } = null;
 
-  if (userId && isValidObjectId(userId)) {
-    type VoteLean = {
-      _id: any;
-      userId: any;
-      caseId: any;
-      design: number;
-      creativity: number;
-      content: number;
-      overall: number;
-      voterRole: 'user' | 'jury';
-      createdAt: Date;
-    };
+  // визначимо caseId з базового кейса
+  const caseIdStr: string | undefined = String((base as any)?._id || (base as any)?.id || '');
 
-    const voteModel = this.caseModel.db.model('CaseVote');
-    const caseId = String((base as any)?._id || (base as any)?.id);
-    if (caseId && isValidObjectId(caseId)) {
-      const v = (await voteModel.findOne({ caseId, userId }).lean()) as VoteLean | null;
-      if (v) {
-        myVote = {
-          design: v.design,
-          creativity: v.creativity,
-          content: v.content,
-          overall: v.overall,
-          role: v.voterRole,
-        };
-      }
+  if (userId && isValidObjectId(userId) && caseIdStr && isValidObjectId(caseIdStr)) {
+    // використовуємо інжектований CaseVoteModel (швидше й типобезпечніше)
+    const v = await this.caseVoteModel
+      .findOne({ caseId: caseIdStr, userId })
+      .lean()
+      .exec() as any | null;
+
+    if (v) {
+      const overall = (v.design + v.creativity + v.content) / 3;
+      myVote = {
+        design: v.design,
+        creativity: v.creativity,
+        content: v.content,
+        overall: Math.round(overall * 10) / 10,
+        role: v.voterRole as 'user' | 'jury' | undefined,
+      };
     }
   }
 
@@ -1495,15 +1606,59 @@ async getCasePageForUser(idOrSlug: string, userId?: string) {
       ? avgOverall < 7
         ? 'regular'
         : avgOverall < 8
-        ? 'interesting'
-        : 'outstanding'
+          ? 'interesting'
+          : 'outstanding'
       : null;
 
   // 4) CTA стан:
-  const ctaState = myVote ? 'review' : 'review-and-score';
+  const ctaState: 'review' | 'review_and_score' = myVote ? 'review' : 'review_and_score';
 
-  return { ...base, myVote, badgeLabel, ctaState };
+  // 5) metaForHeader (п.7.3 ТЗ)
+  const cover =
+    (base as any)?.cover?.url ||
+    (base as any)?.cover?.sizes?.mid ||
+    (base as any)?.cover?.sizes?.full ||
+    null;
+
+  const title: string = (base as any)?.title || '';
+
+  // owner + contributors приходять у getCasePage; owner може бути у base.owner або base.ownerId (популячений)
+  const rawOwner = (base as any)?.owner ?? (base as any)?.ownerId ?? null;
+  const rawContribs = Array.isArray((base as any)?.contributors) ? (base as any).contributors : [];
+
+  // нормалізація автора/ів
+  const normUser = (u: any) => ({
+    id: (u?._id?.toString?.() || u?.id || '').toString(),
+    name: u?.name || u?.teamName || 'User',
+    avatar: u?.avatar || null,
+  });
+
+  // contributors можуть зберігатись як масив user-об’єктів або обгорток { user / userId }
+  const authors = [
+    ...(rawOwner ? [normUser(rawOwner)] : []),
+    ...rawContribs
+      .map((c: any) => ('user' in c ? c.user : (c.userId || c)))
+      .filter(Boolean)
+      .map(normUser),
+  ];
+
+  const singleAuthorEmail =
+    authors.length === 1
+      ? (rawOwner?.email || rawOwner?.contactEmail || null)
+      : null;
+
+  const metaForHeader = {
+    cover,
+    title,
+    authors,
+    singleAuthorEmail,
+    ctaState, // 'review' | 'review_and_score'
+  };
+
+  return { ...base, myVote, badgeLabel, ctaState, metaForHeader };
 }
+
+
 
 /** Форс-побудова palette[] для кейса */
 public async rebuildPalette(caseId: string, opts?: { force?: boolean }) {
@@ -1539,6 +1694,58 @@ public async rebuildPalette(caseId: string, opts?: { force?: boolean }) {
 }
 
 
+/**
+ * Якщо у автора <3 кейсів → повертаємо популярні за 30 днів у тій же індустрії.
+ * Якщо ≥3 → повертаємо останні кейси автора (без поточного).
+ */
+async moreFromAuthor(caseId: string, limit = 6) {
+  if (!Types.ObjectId.isValid(caseId)) throw new BadRequestException('Invalid caseId')
+
+  // беремо ownerId та industry поточного кейса
+  const cur = await this.caseModel.findById(caseId, { ownerId: 1, industry: 1, createdAt: 1 }).lean()
+  if (!cur) throw new BadRequestException('Case not found')
+
+  const ownerId = cur.ownerId as any
+  const cnt = await this.caseModel.countDocuments({ ownerId })
+
+  // Якщо в автора вже 3+ робіт — віддаємо його останні (окрім поточного)
+  if (cnt >= 3) {
+    const items = await this.caseModel.find(
+      { ownerId, _id: { $ne: new Types.ObjectId(caseId) } },
+      { title: 1, cover: 1, industry: 1, createdAt: 1 }
+    ).sort({ createdAt: -1 }).limit(limit).lean()
+
+    return { mode: 'author_latest', items }
+  }
+
+  // Інакше — популярні за 30 днів у тій самій індустрії
+  const now = new Date()
+  const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+  const items = await this.caseModel.aggregate([
+    {
+      $match: {
+        _id: { $ne: new Types.ObjectId(caseId) },
+        industry: cur.industry,
+        createdAt: { $gte: monthAgo },
+      },
+    },
+    {
+      $project: {
+        title: 1,
+        cover: 1,
+        industry: 1,
+        createdAt: 1,
+        // ⚠️ якщо uniqueViews у тебе об'єкт { unique: N } — заміни рядок нижче на '$uniqueViews.unique'
+        score: { $ifNull: ['$uniqueViews', '$views'] },
+      },
+    },
+    { $sort: { score: -1, createdAt: -1 } },
+    { $limit: limit },
+  ]).exec()
+
+  return { mode: 'popular_by_industry', items }
+}
 
 
 }
