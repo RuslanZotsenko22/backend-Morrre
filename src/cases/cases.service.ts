@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Case, CaseDocument } from './schemas/case.schema'
@@ -15,6 +16,12 @@ import { INDUSTRY_ENUM, WHAT_DONE_ENUM } from './schemas/case.schema'
 import { Follow, FollowDocument } from '../users/schemas/follow.schema'
 import { User, UserDocument } from '../users/schemas/user.schema'
 import { CaseVote, CaseVoteDocument } from './schemas/case-vote.schema';
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { VideoQueue } from '../queue/video.queue';
+
+
 
 type CaseStatus = 'draft' | 'published'
 
@@ -204,8 +211,13 @@ constructor(
   @InjectModel(Follow.name)      private followModel: Model<FollowDocument>,
   @InjectModel(Collection.name)  private collectionModel: Model<CollectionDocument>,
   @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>, // ⬅️ додано
+ 
   private readonly cache: RedisCacheService,
+
+  
   private readonly palette: PaletteService,
+
+  @Optional() private readonly videoQueue?: VideoQueue,
 ) {}
 
 
@@ -1745,6 +1757,39 @@ async moreFromAuthor(caseId: string, limit = 6) {
   ]).exec()
 
   return { mode: 'popular_by_industry', items }
+}
+
+async deleteCase(ownerId: string, caseId: string) {
+  // 1) валідний власник + існує кейс
+  // якщо у тебе є власний ParseObjectIdPipe — на контролері він уже стоїть
+  const doc = await (this as any).caseModel?.findOne?.({ _id: caseId, ownerId }).lean?.();
+  if (!doc) {
+    throw new NotFoundException('Case not found or not owned by user');
+  }
+
+  // 2) видаляємо локальні файли: uploads/cases/<caseId>
+  const dir = path.resolve(process.cwd(), 'uploads', 'cases', caseId);
+  if (fs.existsSync(dir)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      // не валимо весь запит — лог або прокинь у свій логер
+      // console.warn('Failed to remove local case folder', e);
+    }
+  }
+
+  // 3) Vimeo cleanup — опційно через чергу, якщо провайдер доступний
+  try {
+    await this.videoQueue?.enqueueCleanup({ caseId });
+  } catch (e) {
+    // не валимо видалення кейса; черга може відпрацювати окремо
+    // console.warn('Failed to enqueue Vimeo cleanup', e);
+  }
+
+  // 4) видаляємо документ кейса
+  await (this as any).caseModel?.deleteOne?.({ _id: caseId });
+
+  return { ok: true };
 }
 
 

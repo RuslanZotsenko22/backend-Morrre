@@ -2,10 +2,16 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import sharp from 'sharp';
 import type { Express } from 'express';
+import { ImageVariantsService } from './image-variants.service'
 
 @Injectable()
 export class MediaService {
-  constructor() {
+  private hasCloudinaryUrl: boolean;
+  private hasCloudinaryTriplet: boolean;
+
+  constructor(
+    private readonly variants: ImageVariantsService, // ✅ акуратно додано в кінець (DI вже підключили у MediaModule)
+  ) {
     // Підійде і коли є CLOUDINARY_URL, і коли є окремі три змінні
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -15,17 +21,13 @@ export class MediaService {
     });
 
     // Мінімальна валідація на старті (не логуємо значення)
-    const hasUrl = !!process.env.CLOUDINARY_URL;
-    const hasTriplet = !!(
+    this.hasCloudinaryUrl = !!process.env.CLOUDINARY_URL;
+    this.hasCloudinaryTriplet = !!(
       process.env.CLOUDINARY_CLOUD_NAME &&
       process.env.CLOUDINARY_API_KEY &&
       process.env.CLOUDINARY_API_SECRET
     );
-    if (!hasUrl && !hasTriplet) {
-      // не кидаємо помилку тут, щоб Nest стартував;
-      // якщо немає ключів — метод нижче кине зрозумілу 400/500
-      // console.warn('Cloudinary env is not set');
-    }
+    // якщо немає ключів — не валимо старт; нижче метод зробить фолбек на локальне збереження
   }
 
   private uploadBuf(buffer: Buffer, folder: string): Promise<string> {
@@ -42,8 +44,10 @@ export class MediaService {
   }
 
   /**
-   * Приймає один файл (file.buffer), генерує webp-варіанти: low/mid/full, вантажить у Cloudinary,
-   * повертає об’єкт URL-ів.
+   * Приймає один файл (file.buffer), генерує webp-варіанти: low/mid/full.
+   * 1) Якщо Cloudinary налаштований — вантажимо у хмари й повертаємо https-URL-и Cloudinary.
+   * 2) Якщо Cloudinary не налаштований або аплоад впав — акуратно робимо фолбек
+   *    у локальне сховище через ImageVariantsService (URL-и /uploads/cases/covers/...).
    */
   async uploadImageVariants(file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File is required');
@@ -52,7 +56,14 @@ export class MediaService {
       throw new BadRequestException('Empty file buffer. Did you enable memoryStorage in FileInterceptor?');
     }
 
-    // Генеруємо 3 webp-версії
+    // Якщо Cloudinary недоступний — одразу робимо локальні варіанти
+    const cloudinaryConfigured = this.hasCloudinaryUrl || this.hasCloudinaryTriplet;
+    if (!cloudinaryConfigured) {
+      // ✅ Фолбек: локальні webp-версії + повертаємо /uploads/cases/covers URLs
+      return this.variants.makeCoverVariants(file);
+    }
+
+    // Генеруємо 3 webp-версії (як і було у твоєму коді)
     let full: Buffer, mid: Buffer, low: Buffer;
     try {
       const src = file.buffer;
@@ -62,10 +73,11 @@ export class MediaService {
         sharp(src).resize(480).webp({ quality: 70 }).toBuffer(),
       ]);
     } catch (e: any) {
+      // Якщо sharp впаде — повідомляємо коректно
       throw new BadRequestException(`Image processing failed: ${e?.message || 'sharp error'}`);
     }
 
-    // Вантажимо одночасно
+    // Вантажимо одночасно у Cloudinary
     try {
       const [lowUrl, midUrl, fullUrl] = await Promise.all([
         this.uploadBuf(low, 'covers/low'),
@@ -75,9 +87,12 @@ export class MediaService {
 
       return { low: lowUrl, mid: midUrl, full: fullUrl };
     } catch (e: any) {
-      // Типова помилка: Must supply api_key -> немає env або config не викликаний
-      if (/api_key/i.test(String(e?.message))) {
-        throw new BadRequestException('Cloudinary not configured: missing API key/secret/cloud name');
+      // Якщо Cloudinary не налаштований або повернув помилку — робимо безпечний фолбек у локальне сховище
+      const msg = String(e?.message || '');
+      const isConfigError = /api_key|cloud name|signature|credentials/i.test(msg);
+      if (isConfigError || !this.hasCloudinaryUrl && !this.hasCloudinaryTriplet) {
+        // ✅ Фолбек: локально через ImageVariantsService
+        return this.variants.makeCoverVariants(file);
       }
       throw new InternalServerErrorException(`Cloudinary upload failed: ${e?.message || 'unknown error'}`);
     }

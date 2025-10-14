@@ -11,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
   Req,
+  Delete, // ✅ ДОДАНО
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -31,6 +32,7 @@ import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
 // ✅ (ДОДАНО) Swagger-декоратори для опису нових ендпоїнтів
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('cases') // ✅ ДОДАНО
 @Controller('cases') // із глобальним prefix 'api' -> /api/cases
 export class CasesController {
   constructor(
@@ -71,6 +73,14 @@ export class CasesController {
   @Patch(':id')
   update(@Req() req, @Param('id', new ParseObjectIdPipe()) id: string, @Body() dto: UpdateCaseDto) {
     return this.cases.updateOwned(req.user.userId, id, dto);
+  }
+
+  // ✅ ДОДАНО: повне видалення кейса (локальні файли + Vimeo cleanup)
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @ApiOperation({ summary: 'Видалити кейс (локальні файли + Vimeo)' })
+  async remove(@Req() req, @Param('id', new ParseObjectIdPipe()) id: string) {
+    return this.cases.deleteCase(req.user.userId, id);
   }
 
   // ===== Cover: файл АБО JSON url =====
@@ -221,10 +231,10 @@ export class CasesController {
   }
 
   @Get(':id/authors')
-@ApiOperation({ summary: 'Автори та співавтори кейса (with isPro, isFollowing)' })
-async authors(@Param('id') id: string, @Req() req: any) {
-  const currentUserId = req?.user?.userId || req?.user?._id || req?.user?.id || null
-  return this.cases.authorsForCase(id, currentUserId)
-}
+  @ApiOperation({ summary: 'Автори та співавтори кейса (with isPro, isFollowing)' })
+  async authors(@Param('id') id: string, @Req() req: any) {
+    const currentUserId = req?.user?.userId || req?.user?._id || req?.user?.id || null
+    return this.cases.authorsForCase(id, currentUserId)
+  }
 
 }

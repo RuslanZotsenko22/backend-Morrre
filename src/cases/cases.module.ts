@@ -10,11 +10,19 @@ import { MediaModule } from '../media/media.module';
 import { QueueModule } from '../queue/queue.module';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
 import { PaletteService } from './palette/palette.service';
-import { InternalCasesController } from './internal-cases.controller';
+ import { InternalCasesController } from './internal-cases.controller';
 
 // ✅ ДОДАНО: моделі User і Follow, бо вони інжектяться у CasesService
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Follow, FollowSchema } from '../users/schemas/follow.schema';
+
+// ✅ ДОДАНО: Draft-модель + контролер/сервіс
+import { CaseDraft, CaseDraftSchema } from './schemas/case-draft.schema';
+import { CaseDraftsController } from './case-drafts.controller';
+import { CaseDraftsService } from './case-drafts.service';
+
+// ✅ ДОДАНО: сервіс прибирання orphan-папок uploads/cases
+ import { DraftsJanitorService } from './drafts-janitor.service';
 
 @Module({
   imports: [
@@ -27,12 +35,29 @@ import { Follow, FollowSchema } from '../users/schemas/follow.schema';
       // ✅ ДОДАНО: провайдери UserModel і FollowModel в контексті CasesModule
       { name: User.name,    schema: UserSchema },
       { name: Follow.name,  schema: FollowSchema },
+
+      // ✅ ДОДАНО: Draft-модель для чернеток кейсів
+      { name: CaseDraft.name, schema: CaseDraftSchema },
     ]),
     MediaModule,
     forwardRef(() => QueueModule),
   ],
-  controllers: [CasesController, InternalCasesController],
-  providers: [CasesService, RedisCacheService, PaletteService],
+  controllers: [
+    CasesController,
+    InternalCasesController,
+
+    // ✅ ДОДАНО: контролер чернеток
+    CaseDraftsController,
+  ],
+  providers: [
+    CasesService,
+    RedisCacheService,
+    PaletteService,
+
+    // ✅ ДОДАНО: сервіс чернеток та прибиральник orphan-папок
+    CaseDraftsService,
+    DraftsJanitorService,
+  ],
   exports: [MongooseModule, CasesService, RedisCacheService],
 })
 export class CasesModule {}

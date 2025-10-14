@@ -11,20 +11,33 @@ import { PopularScheduler } from './popular.scheduler';
 import { VimeoModule } from '../vimeo/vimeo.module';
 import { CasesModule } from '../cases/cases.module';
 import { Case, CaseSchema } from '../cases/schemas/case.schema';
+import { MediaModule } from '../media/media.module'; // ✅ ВЖЕ ДОДАНО
+import { VimeoWorkerService } from './vimeo-worker.service';
+
+// ✅ ДОДАНО: модель драфтів, бо VimeoWorkerService її інжектить
+import { CaseDraft, CaseDraftSchema } from '../cases/schemas/case-draft.schema';
 
 @Module({
   imports: [
     VimeoModule,
     forwardRef(() => CasesModule),
-    // Щоб PopularProcessor міг інжектити модель кейсу:
-    MongooseModule.forFeature([{ name: Case.name, schema: CaseSchema }]),
+
+    // ✅ ДОДАНО: MediaModule, щоб VimeoApi був доступний у цьому модулі
+    MediaModule,
+
+    // Щоб PopularProcessor і VimeoWorkerService могли інжектити моделі:
+    MongooseModule.forFeature([
+      { name: Case.name, schema: CaseSchema },
+      { name: CaseDraft.name, schema: CaseDraftSchema }, // ✅ ДОДАНО
+    ]),
   ],
   providers: [
     ...BullMqProviders,
     VideoQueue,
     VideoProcessor,
     PopularProcessor, // <<<
-    PopularScheduler, // <<<
+    PopularScheduler,
+    VimeoWorkerService, // <<<
   ],
   exports: [VideoQueue],
 })
