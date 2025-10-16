@@ -20,7 +20,9 @@ import { CaseVote, CaseVoteDocument } from './schemas/case-vote.schema';
 import * as fs from 'fs';
 import * as path from 'path';
 import { VideoQueue } from '../queue/video.queue';
-
+import { Inject } from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { USER_STATS_QUEUE } from '../users/stats/user-stats.queue';
 
 
 type CaseStatus = 'draft' | 'published'
@@ -211,7 +213,7 @@ constructor(
   @InjectModel(Follow.name)      private followModel: Model<FollowDocument>,
   @InjectModel(Collection.name)  private collectionModel: Model<CollectionDocument>,
   @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>, // ⬅️ додано
- 
+ @Inject(USER_STATS_QUEUE) private readonly userStatsQueue: Queue,
   private readonly cache: RedisCacheService,
 
   
@@ -219,6 +221,18 @@ constructor(
 
   @Optional() private readonly videoQueue?: VideoQueue,
 ) {}
+
+
+private async enqueueUserStatsForCase(caseDoc: any) {
+  const userIds = new Set<string>();
+  if (caseDoc.authorId) userIds.add(String(caseDoc.authorId));
+  for (const u of caseDoc.contributors || []) userIds.add(String(u));
+  await Promise.all(
+    Array.from(userIds).map(id =>
+      this.userStatsQueue.add('recount', { userId: id }, { attempts: 3, backoff: { type: 'exponential', delay: 1000 } })
+    )
+  );
+}
 
 
 /** Стан CTA з урахуванням того, чи голосував user */

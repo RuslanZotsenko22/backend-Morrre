@@ -1,3 +1,4 @@
+// src/cases/cases.module.ts
 import { Module, forwardRef } from '@nestjs/common';
 import { CasesService } from './cases.service';
 import { CasesController } from './cases.controller';
@@ -10,7 +11,7 @@ import { MediaModule } from '../media/media.module';
 import { QueueModule } from '../queue/queue.module';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
 import { PaletteService } from './palette/palette.service';
- import { InternalCasesController } from './internal-cases.controller';
+import { InternalCasesController } from './internal-cases.controller';
 
 // ✅ ДОДАНО: моделі User і Follow, бо вони інжектяться у CasesService
 import { User, UserSchema } from '../users/schemas/user.schema';
@@ -22,7 +23,10 @@ import { CaseDraftsController } from './case-drafts.controller';
 import { CaseDraftsService } from './case-drafts.service';
 
 // ✅ ДОДАНО: сервіс прибирання orphan-папок uploads/cases
- import { DraftsJanitorService } from './drafts-janitor.service';
+import { DraftsJanitorService } from './drafts-janitor.service';
+
+// ✅ ДОДАНО: модуль черги user-stats (щоб інʼєктити токен 'user-stats' у CasesService)
+import { UserStatsQueueModule } from '../users/stats/user-stats.queue.module';
 
 @Module({
   imports: [
@@ -41,6 +45,9 @@ import { CaseDraftsService } from './case-drafts.service';
     ]),
     MediaModule,
     forwardRef(() => QueueModule),
+
+    // ✅ ДОДАНО: підключили модуль, який експортує BullMQ Queue з токеном 'user-stats'
+    UserStatsQueueModule,
   ],
   controllers: [
     CasesController,

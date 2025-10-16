@@ -15,6 +15,9 @@ import { CollectionsModule } from './collections/collections.module';
 import { HireModule } from './hire/hire.module'
 import { VotesModule } from './votes/votes.module'
 import { FollowsModule } from './users/follows.module'
+import { UserPageModule } from './users/user-page.module';
+import { UserStatsHooksModule } from './users/stats/user-stats.hooks.module';
+
 @Module({
   imports: [
     // робимо конфіг глобальним, щоб .env підхоплювався всюди
@@ -41,7 +44,8 @@ import { FollowsModule } from './users/follows.module'
      HireModule,
      VotesModule,
      FollowsModule,
-
+UserPageModule,
+UserStatsHooksModule,
   ],
 })
 export class AppModule {}

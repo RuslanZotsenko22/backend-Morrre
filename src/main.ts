@@ -5,6 +5,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import * as bodyParser from 'body-parser'
 import * as express from 'express'
 import { join } from 'path'
+import { startUserStatsWorker } from './users/stats/user-stats.worker';
+
 
 // якщо робив ensure-файл — розкоментуй 2 рядки нижче
 // import { ensureHireUploadDir } from './common/fs/ensureUploadDir'
@@ -40,7 +42,7 @@ async function bootstrap() {
   app.use(bodyParser.urlencoded({ extended: true }))
 
   // 6) Валідація DTO
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }))
 
   // 7) Swagger
   const config = new DocumentBuilder()
@@ -55,6 +57,8 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || 4000
   await app.listen(port)
   console.log(`Nest listening on http://localhost:${port}`)
+
+  startUserStatsWorker();
 }
 
 bootstrap()
