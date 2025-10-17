@@ -33,7 +33,7 @@ class DraftBlock {
   @Prop({ type: String })
   mediaUrl?: string
 
-  /** ✅ Статуси медіа + службові поля (для діагностики) */
+ 
   @Prop({ type: String, enum: ['queued','uploading','processing','ready','failed'], default: undefined })
   mediaStatus?: 'queued' | 'uploading' | 'processing' | 'ready' | 'failed'
 

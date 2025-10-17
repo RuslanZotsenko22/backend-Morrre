@@ -1,4 +1,4 @@
-// src/users/user-page.service.ts
+
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -38,7 +38,7 @@ export class UserPageService {
   async getPublicProfile(userId: Types.ObjectId, viewerId?: string) {
     const [profile, stats, categories] = await Promise.all([
       this.profileModel.findOne({ userId }).lean(),
-      // 👇 підказуємо TS, що тут можуть бути додаткові поля (rating)
+      //  підказуємо TS, що тут можуть бути додаткові поля (rating)
       this.statsModel.findOne({ userId }).lean<any>(),
       this.caseModel.aggregate(buildUserCategoriesPipeline(userId)),
     ]);

@@ -124,7 +124,7 @@ function sanitizeCreateDto(
   tags: string[]
   categories: string[]
   industry?: string
-  whatWasDone?: string[] // ✅ додаємо це поле
+  whatWasDone?: string[] 
 } {
   const title = (dto.title ?? '').toString().trim()
   if (!title) throw new BadRequestException('title is required')
@@ -138,13 +138,13 @@ function sanitizeCreateDto(
   const tags = normalizeStringArray(dto.tags, 20)
   const categories = normalizeStringArray(dto.categories, 3)
 
-  // ✅ industry — перевірка по ENUM
+ 
   const industry =
     dto.industry && INDUSTRY_ENUM.includes(dto.industry as any)
       ? (dto.industry as any)
       : undefined
 
-  // ✅ whatWasDone — опційне поле, фільтруємо по ENUM
+  
   const whatWasDone = Array.isArray((dto as any).whatWasDone)
     ? (dto as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
     : []
@@ -183,14 +183,14 @@ function sanitizeUpdateDto(patch: UpdateCaseDto): UpdateCaseDto {
     allowed.categories = normalizeStringArray(patch.categories, 3)
   }
 
-  // ✅ whatWasDone — перевіряємо, якщо є
+  
   if ((patch as any).whatWasDone !== undefined) {
     (allowed as any).whatWasDone = Array.isArray((patch as any).whatWasDone)
       ? (patch as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
       : []
   }
 
-  // ✅ industry — перевірка по ENUM
+  
   if (patch.industry !== undefined) {
     allowed.industry = INDUSTRY_ENUM.includes(patch.industry as any)
       ? (patch.industry as any)
@@ -212,7 +212,7 @@ constructor(
   @InjectModel(User.name)        private userModel: Model<UserDocument>,
   @InjectModel(Follow.name)      private followModel: Model<FollowDocument>,
   @InjectModel(Collection.name)  private collectionModel: Model<CollectionDocument>,
-  @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>, // ⬅️ додано
+  @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>, 
  @Inject(USER_STATS_QUEUE) private readonly userStatsQueue: Queue,
   private readonly cache: RedisCacheService,
 

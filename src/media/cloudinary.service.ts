@@ -10,7 +10,7 @@ export class MediaService {
   private hasCloudinaryTriplet: boolean;
 
   constructor(
-    private readonly variants: ImageVariantsService, // ✅ акуратно додано в кінець (DI вже підключили у MediaModule)
+    private readonly variants: ImageVariantsService, 
   ) {
     // Підійде і коли є CLOUDINARY_URL, і коли є окремі три змінні
     cloudinary.config({
@@ -43,23 +43,18 @@ export class MediaService {
     });
   }
 
-  /**
-   * Приймає один файл (file.buffer), генерує webp-варіанти: low/mid/full.
-   * 1) Якщо Cloudinary налаштований — вантажимо у хмари й повертаємо https-URL-и Cloudinary.
-   * 2) Якщо Cloudinary не налаштований або аплоад впав — акуратно робимо фолбек
-   *    у локальне сховище через ImageVariantsService (URL-и /uploads/cases/covers/...).
-   */
+  
   async uploadImageVariants(file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File is required');
     if (!file.buffer || !file.buffer.length) {
-      // Якщо тут порожньо — у контролері не увімкнений memoryStorage()
+      
       throw new BadRequestException('Empty file buffer. Did you enable memoryStorage in FileInterceptor?');
     }
 
-    // Якщо Cloudinary недоступний — одразу робимо локальні варіанти
+    
     const cloudinaryConfigured = this.hasCloudinaryUrl || this.hasCloudinaryTriplet;
     if (!cloudinaryConfigured) {
-      // ✅ Фолбек: локальні webp-версії + повертаємо /uploads/cases/covers URLs
+      
       return this.variants.makeCoverVariants(file);
     }
 
@@ -91,7 +86,7 @@ export class MediaService {
       const msg = String(e?.message || '');
       const isConfigError = /api_key|cloud name|signature|credentials/i.test(msg);
       if (isConfigError || !this.hasCloudinaryUrl && !this.hasCloudinaryTriplet) {
-        // ✅ Фолбек: локально через ImageVariantsService
+        
         return this.variants.makeCoverVariants(file);
       }
       throw new InternalServerErrorException(`Cloudinary upload failed: ${e?.message || 'unknown error'}`);

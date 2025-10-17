@@ -11,7 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
   Req,
-  Delete, // ✅ ДОДАНО
+  Delete, 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -29,11 +29,11 @@ import { VideoQueue } from '../queue/video.queue';
 
 import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
 
-// ✅ (ДОДАНО) Swagger-декоратори для опису нових ендпоїнтів
+
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
-@ApiTags('cases') // ✅ ДОДАНО
-@Controller('cases') // із глобальним prefix 'api' -> /api/cases
+@ApiTags('cases') 
+@Controller('cases') 
 export class CasesController {
   constructor(
     private readonly cases: CasesService,
@@ -75,7 +75,7 @@ export class CasesController {
     return this.cases.updateOwned(req.user.userId, id, dto);
   }
 
-  // ✅ ДОДАНО: повне видалення кейса (локальні файли + Vimeo cleanup)
+ 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @ApiOperation({ summary: 'Видалити кейс (локальні файли + Vimeo)' })
@@ -201,9 +201,7 @@ export class CasesController {
     return { items: await this.cases.getSimilarCases(id, industry) }
   }
 
-  // ✅ (ДОДАНО) Більше кейсів від автора або популярні за місяць — за правилами ТЗ
-  //    Якщо у автора <3 кейсів → популярні за місяць у тій же індустрії
-  //    Якщо ≥3 → останні кейси автора (без поточного)
+  
   @Get(':id/more-from-author')
   @ApiOperation({ summary: 'Більше кейсів від автора (fallback: популярні за місяць у тій же індустрії)' })
   @ApiQuery({ name: 'limit', required: false, description: 'К-сть елементів, за замовчуванням 6 (макс. 12)' })

@@ -1,4 +1,4 @@
-// cms/src/payload.config.ts
+
 import path from 'path'
 import { buildConfig } from 'payload'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
@@ -120,14 +120,14 @@ export default buildConfig({
         { name: 'status', type: 'select', options: ['draft', 'published'], defaultValue: 'draft' },
         { name: 'industry', type: 'text' },
 
-        // ✅ масив об’єктів { value }, НЕ масив рядків
+        
         { name: 'tags', type: 'array', fields: [{ name: 'value', type: 'text', required: true }] },
         { name: 'categories', type: 'array', fields: [{ name: 'value', type: 'text', required: true }] },
 
         {
           name: 'contributors',
           type: 'array',
-          // ⬇️ Перехоплюємо випадок, коли елемент масиву — просто рядок
+          
           hooks: {
             beforeRead: [
               ({ value }) => {
@@ -149,7 +149,7 @@ export default buildConfig({
               name: 'userId',
               type: 'relationship',
               relationTo: 'users',
-              // ⬇️ Якщо в БД рядок — зробимо { id, collection }
+              
               hooks: {
                 beforeRead: [
                   ({ value }) => {
@@ -261,7 +261,7 @@ export default buildConfig({
           async ({ doc }) => {
             if (!doc) return doc
             try {
-              // ✅ узгоджуємо форму tags/categories до [{ value }]
+              
               if (doc.tags !== undefined) (doc as any).tags = toArrayOfValueObjects(doc.tags, 50)
               if (doc.categories !== undefined) (doc as any).categories = toArrayOfValueObjects(doc.categories, 50)
 
@@ -285,7 +285,7 @@ export default buildConfig({
             const sizes = data?.cover?.sizes
             const pickUrl = (v: any) => (v && typeof v === 'object' && 'url' in v ? String(v.url ?? '') : v)
 
-            // ✅ tags/categories -> [{ value }]
+           
             if ((data as any)?.tags !== undefined) (data as any).tags = toArrayOfValueObjects((data as any).tags, 50)
             if ((data as any)?.categories !== undefined) (data as any).categories = toArrayOfValueObjects((data as any).categories, 50)
 
@@ -361,7 +361,7 @@ export default buildConfig({
           relationTo: 'cases',
           hasMany: true,
           admin: { description: 'Порядок тут = порядок у колекції' },
-          // ⬇️ якщо випадково лежать рядки
+          
           hooks: {
             beforeRead: [
               ({ value }) => {

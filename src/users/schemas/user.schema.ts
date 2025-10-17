@@ -1,3 +1,4 @@
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
@@ -39,4 +40,14 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+/**
+ * INDEXES
+ * Примітка: індекси на email і username вже створюються завдяки @Prop({ unique: true }),
+ * тому тут їх НЕ дублюємо, щоб уникнути попереджень Mongoose.
+ */
+UserSchema.index({ name: 1 });             // пошук/фільтр за іменем
+UserSchema.index({ role: 1 });             // швидка фільтрація за роллю (в т.ч. 'pro')
+UserSchema.index({ totalUserScore: -1 });  // сортування/ранжування користувачів
 
+// (опціонально) комбінований для списків "pro" з рейтингом:
+// UserSchema.index({ role: 1, totalUserScore: -1 });

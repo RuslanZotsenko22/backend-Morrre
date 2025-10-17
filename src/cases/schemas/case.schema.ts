@@ -1,4 +1,4 @@
-// src/cases/schemas/case.schema.ts
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { HydratedDocument } from 'mongoose';
 
@@ -30,7 +30,7 @@ export class Case {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true })
   ownerId: string;
 
-  // ⬇️ contributors як масив об'єктів { userId, role }
+  // ⬇ contributors як масив об'єктів { userId, role }
   @Prop({
     type: [
       {
@@ -46,14 +46,14 @@ export class Case {
   @Prop({ type: [String], default: [] })
   categories: string[]; // ≤3
 
-  // ⬇️ industry як enum
+  // ⬇ industry як enum
   @Prop({ type: String, enum: INDUSTRY_ENUM, index: true })
   industry?: (typeof INDUSTRY_ENUM)[number]; // 1
 
   @Prop({ type: [String], default: [] })
   tags: string[]; // ≤20
 
-  // ⬇️ що було зроблено (масив enum-значень)
+  // ⬇ що було зроблено (масив enum-значень)
   @Prop({ type: [String], enum: WHAT_DONE_ENUM, default: [] })
   whatWasDone?: (typeof WHAT_DONE_ENUM)[number][];
 
@@ -189,29 +189,50 @@ export class Case {
   viewsUnique!: number;
 
   @Prop({ type: Number, default: 0 })
-juryAvgOverall!: number
+  juryAvgOverall!: number;
 
-@Prop({ type: String, enum: ['regular','interesting','outstanding'], default: 'regular' })
-juryBadge!: 'regular' | 'interesting' | 'outstanding'
-
+  @Prop({ type: String, enum: ['regular','interesting','outstanding'], default: 'regular' })
+  juryBadge!: 'regular' | 'interesting' | 'outstanding';
 }
 
 export const CaseSchema = SchemaFactory.createForClass(Case);
 
 // ===== індекси пошуку / фільтрації =====
 
-// Текстовий індекс — тільки по рядках
+// Текстовий індекс — по рядках (один text-індекс на колекцію)
 CaseSchema.index(
   { title: 'text', description: 'text' },
   { weights: { title: 5, description: 1 }, name: 'text_title_description' }
 );
 
-// Звичайні індекси для фільтрації
+
+CaseSchema.index(
+  { status: 1, title: 1 },
+  { name: 'idx_status_title', partialFilterExpression: { status: 'published' } }
+);
+CaseSchema.index(
+  { status: 1, categories: 1 },
+  { name: 'idx_status_categories', partialFilterExpression: { status: 'published' } }
+);
+CaseSchema.index(
+  { status: 1, industry: 1 },
+  { name: 'idx_status_industry', partialFilterExpression: { status: 'published' } }
+);
+CaseSchema.index(
+  { status: 1, ownerId: 1 },
+  { name: 'idx_status_owner', partialFilterExpression: { status: 'published' } }
+);
+
+// contributors для пошуку кейсів, де користувач є співавтором
+CaseSchema.index({ 'contributors.userId': 1 }, { name: 'idx_contributors_userId' });
+
+// Фільтри/сортування
 CaseSchema.index({ tags: 1 }, { name: 'idx_tags' });
 CaseSchema.index({ categories: 1 }, { name: 'idx_categories' });
 CaseSchema.index({ industry: 1 }, { name: 'idx_industry' });
-// (опційно) індекс під фільтрацію по зробленому
 CaseSchema.index({ whatWasDone: 1 }, { name: 'idx_what_was_done' });
+CaseSchema.index({ createdAt: -1 }, { name: 'idx_created_desc' });
+CaseSchema.index({ views: -1 }, { name: 'idx_views_desc' });
 
 // Індекси для головної / popular
 CaseSchema.index({ status: 1, featuredSlides: 1, updatedAt: -1 }, { name: 'idx_featuredSlides' });

@@ -24,6 +24,6 @@ export class AuthController {
 
   @Post('logout')
   logout() {
-    return { ok: true }; // фронт видаляє токени зі сховища
+    return { ok: true }; 
   }
 }

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import axios from 'axios'
 
-// ПРАВИЛЬНЕ підключення саме нодової збірки:
+
 const VibrantNode = require('node-vibrant/node')
 const Vibrant: any = VibrantNode?.default ?? VibrantNode
 

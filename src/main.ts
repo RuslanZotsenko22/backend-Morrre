@@ -28,7 +28,7 @@ async function bootstrap() {
   // 2) Статика для завантажень hire (без префікса /api — так простіше)
   app.use('/uploads/hire', express.static(join(process.cwd(), 'uploads', 'hire')))
 
-// ✅ ДОДАНО: статика для кейсів (drafts / final)
+// статика для кейсів (drafts / final)
   app.use('/uploads/cases', express.static(join(process.cwd(), 'uploads', 'cases')))
 
   // 3) Глобальний префікс API

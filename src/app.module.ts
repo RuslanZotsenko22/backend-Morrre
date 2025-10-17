@@ -17,6 +17,7 @@ import { VotesModule } from './votes/votes.module'
 import { FollowsModule } from './users/follows.module'
 import { UserPageModule } from './users/user-page.module';
 import { UserStatsHooksModule } from './users/stats/user-stats.hooks.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { UserStatsHooksModule } from './users/stats/user-stats.hooks.module';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
-        uri: cfg.get<string>('MONGO_URI')!, // тут важливо, щоб у .env було MONGO_URI
+        uri: cfg.get<string>('MONGO_URI')!, 
       }),
     }),
 
@@ -46,6 +47,7 @@ import { UserStatsHooksModule } from './users/stats/user-stats.hooks.module';
      FollowsModule,
 UserPageModule,
 UserStatsHooksModule,
+SearchModule,
   ],
 })
 export class AppModule {}

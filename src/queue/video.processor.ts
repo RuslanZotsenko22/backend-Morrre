@@ -23,7 +23,7 @@ export class VideoProcessor implements OnModuleInit {
       try {
         switch (job.name) {
           case 'upload': {
-            // ... твій код
+            
             return true;
           }
           case 'sync-case': {
@@ -39,7 +39,7 @@ export class VideoProcessor implements OnModuleInit {
         }
       } catch (e: any) {
         this.logger.error(`sync-case failed: ${e?.message ?? e}`, e?.stack);
-        throw e; // хай BullMQ робить retry/backoff
+        throw e; 
       }
     },
     { connection: this.connection, limiter: { max: 12, duration: 1000 } },

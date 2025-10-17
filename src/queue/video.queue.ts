@@ -1,14 +1,14 @@
-// src/queue/video.queue.ts
+
 import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { QUEUE_TOKENS } from './bullmq.provider';
-import * as path from 'path'; // ➕ додано: знадобиться для jobId
+import * as path from 'path'; 
 
 @Injectable()
 export class VideoQueue {
   constructor(@Inject(QUEUE_TOKENS.VIDEO_QUEUE) private queue: Queue) {}
 
-  // ✅ лишив як є — не чіпав
+  
   async enqueueUpload(job: { caseId: string; filePath: string }) {
     return this.queue.add('upload', job, {
       removeOnComplete: true,
@@ -28,7 +28,7 @@ export class VideoQueue {
   }
 
   // ---------------------------
-  // ➕ НОВЕ: безпечні розширення
+  //  НОВЕ: безпечні розширення
   // ---------------------------
 
   /** Хелпер для стабільного jobId по файлу */
@@ -48,8 +48,8 @@ export class VideoQueue {
     ensureFolder?: boolean; // створити папку кейса, якщо ще немає
     userId?: string;        // хто ініціював (для трекінгу)
     priority?: number;      // 1..10 (менше = вища пріоритетність у BullMQ)
-  sectionIndex?: number; // ✅
-  blockIndex?: number;   // ✅
+  sectionIndex?: number; 
+  blockIndex?: number;   
   
   }) {
     const jobId = this.buildUploadJobId(job.caseId, job.filePath);
@@ -102,7 +102,7 @@ export class VideoQueue {
       backoff: { type: 'exponential', delay: 2000 },
       removeOnComplete: true,
       removeOnFail: false,
-      priority: 10, // нижчий пріоритет
+      priority: 10, 
     });
 
     

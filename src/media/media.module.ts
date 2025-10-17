@@ -7,7 +7,7 @@ import { CaseDraft, CaseDraftSchema } from '../cases/schemas/case-draft.schema';
 import { Case, CaseSchema } from '../cases/schemas/case.schema';
 
 import { VimeoApi } from './vimeo.api';
-import { ImageVariantsService } from './image-variants.service'; // ✅ ДОДАНО
+import { ImageVariantsService } from './image-variants.service'; 
 
 @Module({
   imports: [
@@ -17,7 +17,7 @@ import { ImageVariantsService } from './image-variants.service'; // ✅ ДОДА
     ]),
   ],
   controllers: [VimeoWebhookController],
-  providers: [MediaService, VimeoApi, ImageVariantsService],   // ✅ ДОДАНО
-  exports:   [MediaService, VimeoApi, ImageVariantsService],   // ✅ ДОДАНО
+  providers: [MediaService, VimeoApi, ImageVariantsService],   
+  exports:   [MediaService, VimeoApi, ImageVariantsService],   
 })
 export class MediaModule {}

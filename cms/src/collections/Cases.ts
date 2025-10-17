@@ -67,7 +67,7 @@ export const Cases: CollectionConfig = {
       ],
     },
 
-    // ⬇️ ЗАМІНА: industry як select (enum)
+    
     {
       name: 'industry',
       type: 'select',
@@ -88,7 +88,7 @@ export const Cases: CollectionConfig = {
       admin: { description: 'Вибери одну індустрію' },
     },
 
-    // ⬇️ НОВЕ: whatWasDone — масив чіпів зі списку
+   
     {
       name: 'whatWasDone',
       label: 'Що було зроблено',
@@ -118,7 +118,7 @@ export const Cases: CollectionConfig = {
       admin: { description: 'Оберіть кілька пунктів (опційно)' },
     },
 
-    // ✅ масив об'єктів { value }
+    
     {
       name: 'tags',
       type: 'array',

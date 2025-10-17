@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { UserPageService } from './user-page.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SetCaseOrderDto } from './dto/set-case-order.dto';
-import { FollowsService } from './follows.service'; // використовуємо твій існуючий сервіс
+import { FollowsService } from './follows.service'; 
 
 
 @Controller('me')
