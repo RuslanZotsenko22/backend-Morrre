@@ -1,9 +1,11 @@
-
 import path from 'path'
 import { buildConfig } from 'payload'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { mongooseAdapter } from '@payloadcms/db-mongodb'
 import nodemailer from 'nodemailer'
+
+// ⬇⬇⬇ імпорт колекції PopularQueue
+import PopularQueue from './collections/PopularQueue'
 
 // ---- Mongo URL / Secret
 const mongoURL = process.env.MONGODB_URI || process.env.DATABASE_URI || process.env.MONGO_URI
@@ -32,7 +34,7 @@ function toArrayOfValueObjects(input: unknown, limit = 50): Array<{ value: strin
   return out
 }
 
-// ---- Email adapter (працює і в dev, і коли очікують фабрику)
+// ---- Email adapter
 const transport = nodemailer.createTransport({
   streamTransport: true,
   buffer: true,
@@ -119,15 +121,12 @@ export default buildConfig({
         { name: 'description', type: 'richText' },
         { name: 'status', type: 'select', options: ['draft', 'published'], defaultValue: 'draft' },
         { name: 'industry', type: 'text' },
-
-        
         { name: 'tags', type: 'array', fields: [{ name: 'value', type: 'text', required: true }] },
         { name: 'categories', type: 'array', fields: [{ name: 'value', type: 'text', required: true }] },
 
         {
           name: 'contributors',
           type: 'array',
-          
           hooks: {
             beforeRead: [
               ({ value }) => {
@@ -149,7 +148,6 @@ export default buildConfig({
               name: 'userId',
               type: 'relationship',
               relationTo: 'users',
-              
               hooks: {
                 beforeRead: [
                   ({ value }) => {
@@ -224,36 +222,76 @@ export default buildConfig({
           },
         },
 
-        { name: 'featuredSlides', type: 'checkbox', label: 'Show in “Popular today” slides', defaultValue: false },
-        { name: 'popularQueued', type: 'checkbox', label: 'Queued for Popular', defaultValue: false },
-        { name: 'forceToday', type: 'checkbox', label: 'Force next batch (Popular)', defaultValue: false },
-
+        // ---------- Popular meta (згруповано у вкладку)
         {
-          name: 'queuedAt',
-          type: 'date',
-          label: 'Queued at',
-          admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } },
+          type: 'tabs',
+          tabs: [
+            {
+              label: 'Popular meta',
+              fields: [
+                { name: 'featuredSlides', type: 'checkbox', label: 'Show in “Popular today” slides', defaultValue: false },
+                {
+                  name: 'popularQueued',
+                  type: 'checkbox',
+                  label: 'Queued for Popular (system)',
+                  defaultValue: false,
+                  admin: {
+                    readOnly: true,
+                    description: 'Службове поле: виставляється автоматично при додаванні в чергу.',
+                  },
+                },
+                { name: 'forceToday', type: 'checkbox', label: 'Force next batch (Popular)', defaultValue: false },
+                {
+                  name: 'queuedAt',
+                  type: 'date',
+                  label: 'Queued at',
+                  admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } },
+                },
+                {
+                  name: 'popularActive',
+                  type: 'checkbox',
+                  label: 'Active in Popular',
+                  defaultValue: false,
+                  admin: { readOnly: true },
+                },
+                {
+                  name: 'popularBatchDate',
+                  type: 'date',
+                  label: 'Popular batch date (UTC 00:00)',
+                  admin: { readOnly: true, date: { pickerAppearance: 'dayOnly' } },
+                },
+                {
+                  name: 'popularPublishedAt',
+                  type: 'date',
+                  label: 'Popular published at',
+                  admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } },
+                },
+                {
+                  name: 'popularStatus',
+                  type: 'select',
+                  label: 'Popular status',
+                  options: [
+                    { label: 'None', value: 'none' },
+                    { label: 'Queued (in queue)', value: 'queued' },
+                    { label: 'Published (on Popular)', value: 'published' },
+                  ],
+                  defaultValue: 'none',
+                  admin: {
+                    readOnly: true,
+                    description: 'Реальний статус у розділі Popular (оновлюється бекендом).',
+                  },
+                },
+                {
+                  name: 'lifeScore',
+                  type: 'number',
+                  label: 'Life score',
+                  defaultValue: 100,
+                  admin: { readOnly: true },
+                },
+              ],
+            },
+          ],
         },
-        {
-          name: 'popularActive',
-          type: 'checkbox',
-          label: 'Active in Popular',
-          defaultValue: false,
-          admin: { readOnly: true },
-        },
-        {
-          name: 'popularBatchDate',
-          type: 'date',
-          label: 'Popular batch date (UTC 00:00)',
-          admin: { readOnly: true, date: { pickerAppearance: 'dayOnly' } },
-        },
-        {
-          name: 'popularPublishedAt',
-          type: 'date',
-          label: 'Popular published at',
-          admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } },
-        },
-        { name: 'lifeScore', type: 'number', label: 'Life score', defaultValue: 100, admin: { readOnly: true } },
       ],
 
       hooks: {
@@ -261,72 +299,16 @@ export default buildConfig({
           async ({ doc }) => {
             if (!doc) return doc
             try {
-              
               if (doc.tags !== undefined) (doc as any).tags = toArrayOfValueObjects(doc.tags, 50)
               if (doc.categories !== undefined) (doc as any).categories = toArrayOfValueObjects(doc.categories, 50)
-
-              if (Array.isArray((doc as any).videos)) {
-                ;(doc as any).videos = (doc as any).videos.map((v: any) => {
-                  if (!v || typeof v !== 'object') return v
-                  if (v.externalId != null && typeof v.externalId !== 'string') v.externalId = String(v.externalId)
-                  if (v.url != null && typeof v.url !== 'string') v.url = String(v.url)
-                  if (v.status === 'uploading') v.status = 'processing'
-                  else if (v.status != null && typeof v.status !== 'string') v.status = String(v.status)
-                  return v
-                })
-              }
             } catch { /* ignore */ }
             return doc
-          },
-        ],
-
-        beforeValidate: [
-          ({ data }) => {
-            const sizes = data?.cover?.sizes
-            const pickUrl = (v: any) => (v && typeof v === 'object' && 'url' in v ? String(v.url ?? '') : v)
-
-           
-            if ((data as any)?.tags !== undefined) (data as any).tags = toArrayOfValueObjects((data as any).tags, 50)
-            if ((data as any)?.categories !== undefined) (data as any).categories = toArrayOfValueObjects((data as any).categories, 50)
-
-            if (sizes) {
-              if (sizes.low !== undefined) sizes.low = pickUrl(sizes.low)
-              if (sizes.medium !== undefined) sizes.medium = pickUrl(sizes.medium)
-              if (sizes.high !== undefined) sizes.high = pickUrl(sizes.high)
-              if (typeof sizes.low === 'number') sizes.low = String(sizes.low)
-              if (typeof sizes.medium === 'number') sizes.medium = String(sizes.medium)
-              if (typeof sizes.high === 'number') sizes.high = String(sizes.high)
-            }
-            if (Array.isArray((data as any)?.videos)) {
-              ;(data as any).videos = (data as any).videos.map((v: any) =>
-                v?.status === 'uploading' ? { ...v, status: 'processing' } : v,
-              )
-            }
-            return data
-          },
-        ],
-
-        afterChange: [
-          async ({ doc, operation }) => {
-            if (operation === 'delete') return
-            try {
-              if (process.env.NEST_API_URL && process.env.INTERNAL_SECRET) {
-                await fetch(`${process.env.NEST_API_URL}/internal/cases/sync`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'X-Internal-Secret': process.env.INTERNAL_SECRET as string,
-                  },
-                  body: JSON.stringify({ id: String((doc as any).id || (doc as any)._id) }),
-                })
-              }
-            } catch { /* ignore */ }
           },
         ],
       },
     },
 
-    // -------- COLLECTIONS (нова)
+    // -------- COLLECTIONS
     {
       slug: 'collections',
       admin: { useAsTitle: 'title' },
@@ -361,52 +343,14 @@ export default buildConfig({
           relationTo: 'cases',
           hasMany: true,
           admin: { description: 'Порядок тут = порядок у колекції' },
-          
-          hooks: {
-            beforeRead: [
-              ({ value }) => {
-                if (!value) return value
-                const arr = Array.isArray(value) ? value : [value]
-                return arr
-                  .map((v) => {
-                    if (typeof v === 'string') {
-                      const id = v.trim()
-                      return /^[0-9a-fA-F]{24}$/.test(id) ? { id, collection: 'cases' } : undefined
-                    }
-                    return v
-                  })
-                  .filter(Boolean)
-              },
-            ],
-          },
         },
         { name: 'featured', type: 'checkbox', defaultValue: false, label: 'Показувати на головній' },
         { name: 'order', type: 'number', defaultValue: 0 },
       ],
-      hooks: {
-        afterChange: [
-          async ({ doc }) => {
-            try {
-              if (process.env.NEST_API_URL && process.env.INTERNAL_SECRET) {
-                await fetch(`${process.env.NEST_API_URL}/api/internal/collections/set-cases`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'X-Internal-Secret': process.env.INTERNAL_SECRET as string,
-                  },
-                  body: JSON.stringify({
-                    id: String((doc as any).id || (doc as any)._id),
-                    cases: (Array.isArray((doc as any).cases) ? (doc as any).cases : []).map(String),
-                  }),
-                })
-              }
-            } catch (e) {
-              console.error('[collections.afterChange] sync failed', e)
-            }
-          },
-        ],
-      },
     },
+
+    // -------- PopularQueue
+    PopularQueue,
   ],
 
   typescript: {

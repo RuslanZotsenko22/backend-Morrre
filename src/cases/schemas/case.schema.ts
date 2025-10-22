@@ -1,4 +1,3 @@
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { HydratedDocument } from 'mongoose';
 
@@ -119,8 +118,8 @@ export class Case {
   popularBatchDate?: Date;
 
   /** Фактичний час публікації у «Popular» */
-  @Prop({ type: Date, index: true })
-  popularPublishedAt?: Date;
+  @Prop({ type: Date, default: null })
+  popularPublishedAt: Date | null;
 
   // ===== MVP рейтинг/життя та лічильники взаємодій =====
 
@@ -191,8 +190,12 @@ export class Case {
   @Prop({ type: Number, default: 0 })
   juryAvgOverall!: number;
 
-  @Prop({ type: String, enum: ['regular','interesting','outstanding'], default: 'regular' })
+  @Prop({ type: String, enum: ['regular', 'interesting', 'outstanding'], default: 'regular' })
   juryBadge!: 'regular' | 'interesting' | 'outstanding';
+
+  /** Статус у Popular (для швидких фільтрів/видимості) */
+  @Prop({ type: String, enum: ['none', 'queued', 'published'], default: 'none', index: true })
+  popularStatus: 'none' | 'queued' | 'published';
 }
 
 export const CaseSchema = SchemaFactory.createForClass(Case);
@@ -204,7 +207,6 @@ CaseSchema.index(
   { title: 'text', description: 'text' },
   { weights: { title: 5, description: 1 }, name: 'text_title_description' }
 );
-
 
 CaseSchema.index(
   { status: 1, title: 1 },

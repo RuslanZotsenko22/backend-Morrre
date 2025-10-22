@@ -29,25 +29,30 @@ export class AuthService {
   // ========= OTP FLOW (email → code → complete-register) =========
 
   /** 1) Надіслати код на email */
-  async requestCode(email: string) {
-    const code = this.generateOtp(); // 6 цифр
-    const codeHash = await bcrypt.hash(code, 10);
-
-    // Зберігаємо в Redis одним JSON об'єктом + TTL
-    const otpKey = this.otpKey(email);
-    const payload = JSON.stringify({
-      email,
-      codeHash,
-      attempts: 0,
-      // зручна дубляжна дата закінчення (для дебагу), TTL все одно керує Redis
-      expiresAt: Date.now() + this.OTP_TTL_MIN * 60_000,
-    });
-    await this.redis.set(otpKey, payload, 'EX', this.OTP_TTL_MIN * 60);
-
-    await this.sendOtpEmail(email, code); // якщо SMTP не налаштовано — тихо пропустимо
-    // console.log(`[DEV] OTP for ${email}: ${code}`);
-    return { ok: true };
+ async requestCode(email: string) {
+  // Якщо користувач із таким email вже існує — одразу 400
+  const existing = await this.users.findByEmail(email);
+  if (existing) {
+    throw new BadRequestException('Email already registered');
   }
+
+  const code = this.generateOtp(); // 6 цифр
+  const codeHash = await bcrypt.hash(code, 10);
+
+  const otpKey = this.otpKey(email);
+  const payload = JSON.stringify({
+    email,
+    codeHash,
+    attempts: 0,
+    expiresAt: Date.now() + this.OTP_TTL_MIN * 60_000,
+  });
+  await this.redis.set(otpKey, payload, 'EX', this.OTP_TTL_MIN * 60);
+
+  await this.sendOtpEmail(email, code);
+  return { ok: true };
+}
+
+
 
   /** 2) Перевірити код і видати одноразовий токен */
   async verifyCode(email: string, code: string) {

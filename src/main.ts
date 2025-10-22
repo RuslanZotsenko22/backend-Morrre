@@ -6,7 +6,7 @@ import * as bodyParser from 'body-parser'
 import * as express from 'express'
 import { join } from 'path'
 import { startUserStatsWorker } from './users/stats/user-stats.worker';
-
+import { MongoDuplicateKeyFilter } from './common/filters/mongo-duplicate.filter';
 
 // якщо робив ensure-файл — розкоментуй 2 рядки нижче
 // import { ensureHireUploadDir } from './common/fs/ensureUploadDir'
@@ -43,6 +43,9 @@ async function bootstrap() {
 
   // 6) Валідація DTO
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }))
+
+ // 6.1) Глобальний фільтр Mongo duplicate key (E11000) → 400 замість 500
+  app.useGlobalFilters(new MongoDuplicateKeyFilter());
 
   // 7) Swagger
   const config = new DocumentBuilder()
