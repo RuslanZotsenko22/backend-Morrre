@@ -3,31 +3,47 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { UserStats, UserStatsDocument } from './schemas/user-stats.schema';
 
-// Очікуємо існуючі моделі
+
 import { CaseDocument } from '../cases/schemas/case.schema';
+
+
+import { RedisCacheService } from '../common/redis/redis-cache.service';
+
+type Period = 'all' | 'weekly';
 
 @Injectable()
 export class UsersRatingService {
   private readonly log = new Logger(UsersRatingService.name);
+
+  
+  private readonly CACHE_VER = 'v1';
+  private readonly CACHE_TTL_MS = Number(process.env.USERS_RATING_CACHE_TTL_MS ?? 10 * 60 * 1000); // 10 хв
+  private readonly CACHE_TOPN = Math.min(
+    Math.max(Number(process.env.USERS_RATING_CACHE_SIZE ?? 200), 50),
+    1000,
+  ); // кешуємо до 200 (мін:50, макс:1000)
 
   constructor(
     @InjectModel('Case') private readonly caseModel: Model<CaseDocument>,
     @InjectModel('User') private readonly userModel: Model<any>,
     @InjectModel('CaseVote') private readonly caseVoteModel: Model<any>,
     @InjectModel(UserStats.name) private readonly statsModel: Model<UserStatsDocument>,
+
+    
+    private readonly cache: RedisCacheService,
   ) {}
 
-  /** перерахунок усього рейтингу (all-time + weekly) */
+  
   async recomputeAll(): Promise<{ users: number }> {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // ---- ALL-TIME
+    
     const allTime = await this.aggregateScores({ period: 'all' });
 
-    // ---- WEEKLY
+    
     const weekly = await this.aggregateScores({ period: 'weekly', since });
 
-    // Мерджимо all + weekly → upsert у user_stats
+    
     const weeklyMap = new Map<string, number>();
     for (const w of weekly) weeklyMap.set(String(w._id), w.totalScore);
 
@@ -54,7 +70,7 @@ export class UsersRatingService {
       upserts++;
     }
 
-    // Якщо у weekly є користувачі без allTime (наприклад, нові) — теж збережемо
+    
     for (const w of weekly) {
       const key = String(w._id);
       if (allTime.find((a) => String(a._id) === key)) continue;
@@ -78,36 +94,59 @@ export class UsersRatingService {
     }
 
     this.log.log(`UserStats upserted: ${upserts}`);
+
+    
+    await this.invalidateCacheSafe();
+
     return { users: upserts };
   }
 
-  /** Лідерборд */
+ 
   async leaderboard(params: { period: 'all' | 'weekly'; limit?: number; offset?: number }) {
     const limit = Math.min(Math.max(Number(params.limit ?? 20), 1), 100);
     const offset = Math.max(Number(params.offset ?? 0), 0);
+    const period: Period = params.period === 'weekly' ? 'weekly' : 'all';
 
-    const sort: any = params.period === 'weekly' ? { weeklyScore: -1 } : { totalScore: -1 };
+    const cacheKey = this.key(period);
 
-    const items = await this.statsModel
-      .find({}, { userId: 1, totalScore: 1, weeklyScore: 1, caseCount: 1, refsLikesTotal: 1, casesOver7Count: 1 })
+    
+    try {
+      const cached = await this.cache.get<any[]>(cacheKey);
+      if (Array.isArray(cached)) {
+        this.log.debug(`leaderboard cache HIT [${period}] len=${cached.length}`);
+        const items = cached.slice(offset, offset + limit);
+        return { items, limit, offset, period };
+      }
+    } catch {
+      /* ignore cache errors */
+    }
+
+    this.log.debug(`leaderboard cache MISS [${period}] — querying DB`);
+
+    
+    const sort: any = period === 'weekly' ? { weeklyScore: -1 } : { totalScore: -1 };
+
+    const raw = await this.statsModel
+      .find(
+        {},
+        { userId: 1, totalScore: 1, weeklyScore: 1, caseCount: 1, refsLikesTotal: 1, casesOver7Count: 1 },
+      )
       .sort(sort)
-      .skip(offset)
-      .limit(limit)
+      .limit(this.CACHE_TOPN)
       .lean();
 
-    // підтягнемо базові поля користувача
-    const ids = items.map((i) => i.userId);
+    const ids = raw.map((i) => i.userId);
     const users = await this.userModel
       .find({ _id: { $in: ids } }, { _id: 1, name: 1, email: 1, avatar: 1 })
       .lean();
 
     const uMap = new Map<string, any>(users.map(u => [String(u._id), u]));
 
-    // додаємо позицію (rank) і профіль
-    const enriched = items.map((it, i) => {
+    
+    const fullTop = raw.map((it, i) => {
       const user = uMap.get(String(it.userId));
       return {
-        rank: offset + i + 1,
+        rank: i + 1,
         userId: String(it.userId),
         user: user ? { id: String(user._id), name: user.name, email: user.email, avatar: user.avatar } : null,
         totalScore: it.totalScore,
@@ -118,18 +157,23 @@ export class UsersRatingService {
       };
     });
 
-    return { items: enriched, limit, offset, period: params.period };
+   
+    try {
+      await this.cache.set(cacheKey, fullTop, this.CACHE_TTL_MS);
+    } catch {
+      /* ignore cache errors */
+    }
+
+    const items = fullTop.slice(offset, offset + limit);
+    return { items, limit, offset, period };
   }
 
-  // ----------------------------
-  // ВНУТРІШНІ АГРЕГАЦІЇ
-  // ----------------------------
+  
 
   private async aggregateScores(params: { period: 'all' | 'weekly'; since?: Date }) {
     const since = params.period === 'weekly' ? params.since ?? new Date(Date.now() - 7 * 864e5) : undefined;
 
-    // A) Бал за якість кейсів (тільки якщо juryAvgOverall >= 7.0)
-    // points = ((rating - 7)^2) * 30; sum по кейсам користувача
+   
     const caseMatch: any = { status: 'published' };
     if (since) {
       caseMatch.createdAt = { $gte: since };
@@ -167,13 +211,10 @@ export class UsersRatingService {
       },
     ]);
 
-    // B) Лайки на референсах (лог згладжування) × 15
-    // Беремо з CaseVote (на випадок різних назв типів — підстрахуємось)
     const likeMatch: any = {};
     if (since) likeMatch.createdAt = { $gte: since };
     likeMatch.type = { $in: ['refLike', 'referenceLike', 'ref_like', 'ref'] };
 
-    // join CaseVote -> Case (щоб знати ownerId)
     const refsAgg = await this.caseVoteModel.aggregate([
       { $match: likeMatch },
       {
@@ -202,7 +243,7 @@ export class UsersRatingService {
       },
     ]);
 
-    // Мерджимо A + B
+    
     const qMap = new Map<string, any>(qualityAgg.map(q => [String(q._id), q]));
     const rMap = new Map<string, any>(refsAgg.map(r => [String(r._id), r]));
 
@@ -244,5 +285,21 @@ export class UsersRatingService {
     }
 
     return out;
+  }
+
+  // ----------------------------
+  // КЕШ ХЕЛПЕРИ 
+  // ----------------------------
+
+  
+  private key(period: Period) {
+    return `users:rating:${this.CACHE_VER}:${period}`;
+  }
+
+  /** Безпечна інвалідація обох ключів (all + weekly) */
+  private async invalidateCacheSafe() {
+    try { await this.cache.del(this.key('all')); } catch {}
+    try { await this.cache.del(this.key('weekly')); } catch {}
+    this.log.debug('leaderboard cache invalidated [all, weekly]');
   }
 }
