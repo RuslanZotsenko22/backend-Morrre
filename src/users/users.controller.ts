@@ -5,14 +5,22 @@ import {
   Body, 
   UseGuards, 
   Req, 
-  Query 
+  Query,
+  Optional, 
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
+
+import { UsersRatingService } from './users-rating.service';
+
 @Controller('users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    
+    @Optional() private readonly rating?: UsersRatingService,
+  ) {}
 
   @Get('check-username')
   async checkUsername(@Query('u') u: string) {
@@ -40,5 +48,24 @@ export class UsersController {
   @Patch('me')
   update(@Req() req, @Body() body: any) {
     return this.users.updateProfile(req.user.userId, body);
+  }
+
+ 
+  @Get('rating')
+  async leaderboard(
+    @Query('period') period: 'weekly' | 'all' = 'all',
+    @Query('limit') limit = '20',
+    @Query('offset') offset = '0',
+  ) {
+    const lim = parseInt(limit, 10) || 20;
+    const off = parseInt(offset, 10) || 0;
+    const per: 'weekly' | 'all' = period === 'weekly' ? 'weekly' : 'all';
+
+    
+    if (!this.rating) {
+      return { items: [], limit: lim, offset: off, period: per, note: 'UsersRatingService not wired yet' };
+    }
+
+    return this.rating.leaderboard({ period: per, limit: lim, offset: off });
   }
 }

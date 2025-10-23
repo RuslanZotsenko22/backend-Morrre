@@ -1,9 +1,7 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
 import { CollectionsService } from '../collections/collections.service';
 import { CasesService } from '../cases/cases.service';
-
-// ⬇ додано для роботи з Mongo (черга PopularQueue + Case)
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PopularQueue, PopularQueueDocument } from './schemas/popular-queue.schema';
@@ -12,13 +10,12 @@ import { PopularQueue, PopularQueueDocument } from './schemas/popular-queue.sche
 export class HomeService {
   private readonly ttlMs = 180_000; // 3 хв
   private readonly keyLanding = 'home:landing:v1'; // збільш версію при зміні формату відповіді
+  private readonly logger = new Logger(HomeService.name);
 
   constructor(
     private readonly cache: RedisCacheService,
     private readonly collections: CollectionsService,
     private readonly cases: CasesService,
-
-    // ⬇ інʼєкції моделей (не зачіпають існуючу логіку)
     @InjectModel(PopularQueue.name) private readonly pqModel: Model<PopularQueueDocument>,
     @InjectModel('Case') private readonly caseModel: Model<any>,
   ) {}
@@ -53,14 +50,9 @@ export class HomeService {
   }
 
   // ===============================
-  // Curated Queue (Popular) — нове
+  // Curated Queue (Popular)
   // ===============================
 
-  /**
-   * Додати кейс до curated-черги (FIFO).
-   * - помічає Case.popularStatus='queued', Case.popularQueued=true, queuedAt=now
-   * - створює запис у PopularQueue
-   */
   async addCaseToPopularQueue(caseId: string) {
     if (!Types.ObjectId.isValid(caseId)) {
       throw new BadRequestException('Invalid caseId');
@@ -73,7 +65,6 @@ export class HomeService {
     const existing = await this.pqModel.findOne({ caseId, status: 'queued' }).lean();
     if (existing) return existing;
 
-    // оновлюємо статуси у кейсі
     const now = new Date();
     await this.caseModel.updateOne(
       { _id: caseId },
@@ -87,7 +78,6 @@ export class HomeService {
       },
     );
 
-    // створюємо елемент черги
     const created = await this.pqModel.create({
       caseId: new Types.ObjectId(caseId),
       status: 'queued',
@@ -95,35 +85,23 @@ export class HomeService {
       addedAt: now,
     });
 
-    // інвалід кешу головної (щоб швидше підхопити зміни)
     await this.invalidateLandingCache();
-
     return created;
   }
 
-  /**
-   * Отримати список елементів черги (для адмінів).
-   * Можна фільтрувати за статусом 'queued' | 'published'
-   */
   async listPopularQueue(status?: 'queued' | 'published') {
     const filter: any = {};
     if (status) filter.status = status;
 
     const items = await this.pqModel
       .find(filter)
-      .sort({ forceToday: -1, addedAt: 1 }) // forceToday попереду, далі FIFO
+      .sort({ forceToday: -1, addedAt: 1 })
       .populate('caseId', 'title cover authors categories popularStatus queuedAt forceToday')
       .lean();
 
     return items;
   }
 
-  /**
-   * Оновити елемент черги:
-   * - зміна status (queued|published)
-   * - виставити/зняти forceToday
-   * Синхронно оновлює повʼязані поля у Case.
-   */
   async updatePopularQueueItem(
     id: string,
     dto: { status?: 'queued' | 'published'; forceToday?: boolean },
@@ -132,14 +110,11 @@ export class HomeService {
     const item = await this.pqModel.findById(id);
     if (!item) throw new NotFoundException('Queue item not found');
 
-    // forceToday
     if (typeof dto.forceToday === 'boolean') {
       item.forceToday = dto.forceToday;
-      // продублюємо у кейсі для швидких фільтрів/сорту
       await this.caseModel.updateOne({ _id: item.caseId }, { $set: { forceToday: dto.forceToday } });
     }
 
-    // status
     if (dto.status) {
       item.status = dto.status;
       if (dto.status === 'published') {
@@ -152,13 +127,14 @@ export class HomeService {
               popularStatus: 'published',
               popularActive: true,
               popularPublishedAt: pubAt,
-              popularBatchDate: new Date(new Date(pubAt).toISOString().slice(0, 10)), // початок доби (UTC-ish)
+              // batchDate як північ UTC
+              popularBatchDate: new Date(pubAt.toISOString().slice(0, 10)),
               popularQueued: false,
+              forceToday: false,
             },
           },
         );
       } else {
-        // повернення в queued
         await this.caseModel.updateOne(
           { _id: item.caseId },
           { $set: { popularStatus: 'queued', popularActive: false, popularQueued: true } },
@@ -168,17 +144,10 @@ export class HomeService {
     }
 
     await item.save();
-
-    // інвалід кешу головної
     await this.invalidateLandingCache();
-
     return item;
   }
 
-  /**
-   * Швидка примусова публікація конкретного кейса (в обхід черги).
-   * Використовується для екстрених випадків або UI-кнопки "Publish now".
-   */
   async publishCaseToPopularNow(caseId: string) {
     if (!Types.ObjectId.isValid(caseId)) {
       throw new BadRequestException('Invalid caseId');
@@ -189,7 +158,6 @@ export class HomeService {
 
     const pubAt = new Date();
 
-    // 1) Оновлюємо сам кейс
     await this.caseModel.updateOne(
       { _id: caseId },
       {
@@ -197,14 +165,13 @@ export class HomeService {
           popularStatus: 'published',
           popularActive: true,
           popularPublishedAt: pubAt,
-          popularBatchDate: new Date(new Date(pubAt).toISOString().slice(0, 10)),
+          popularBatchDate: new Date(pubAt.toISOString().slice(0, 10)),
           popularQueued: false,
           forceToday: false,
         },
       },
     );
 
-    // 2) Якщо у черзі існує queued-елемент — оновлюємо його до published
     const queued = await this.pqModel.findOne({ caseId, status: 'queued' });
     if (queued) {
       queued.status = 'published';
@@ -212,7 +179,6 @@ export class HomeService {
       queued.forceToday = false;
       await queued.save();
     } else {
-      // інакше створимо published-запис для історії
       await this.pqModel.create({
         caseId: new Types.ObjectId(caseId),
         status: 'published',
@@ -222,9 +188,76 @@ export class HomeService {
       });
     }
 
-    // інвалід кешу головної
+    await this.invalidateLandingCache();
+    return { ok: true };
+  }
+
+  // ===============================
+  // NEW: Daily batch (preview + publish)
+  // ===============================
+
+  /**
+   * Попередній перегляд — які айтеми підуть у найближчу публікацію (forceToday попереду, далі FIFO).
+   */
+  async previewDailyBatch(limit = 8) {
+    const items = await this.pqModel
+      .find({ status: 'queued' })
+      .sort({ forceToday: -1, addedAt: 1 })
+      .limit(limit)
+      .populate('caseId', 'title popularStatus queuedAt forceToday')
+      .lean();
+
+    return items;
+  }
+
+  /**
+   * Публікація перших N айтемів (forceToday first → FIFO).
+   * Ідемпотентно: оновлює тільки ті, що мають status='queued'.
+   */
+  async publishDailyBatch(limit = 8) {
+    const batch = await this.pqModel
+      .find({ status: 'queued' })
+      .sort({ forceToday: -1, addedAt: 1 })
+      .limit(limit);
+
+    if (!batch.length) {
+      this.logger.log(`publishDailyBatch: nothing to publish`);
+      return { published: 0, items: [] };
+    }
+
+    const pubAt = new Date();
+    const batchDate = new Date(pubAt.toISOString().slice(0, 10)); // північ UTC
+
+    for (const item of batch) {
+      // підстрахуємось на випадок гонки
+      if (item.status !== 'queued') continue;
+
+      item.status = 'published';
+      item.publishedAt = pubAt;
+      item.forceToday = false;
+      await item.save();
+
+      await this.caseModel.updateOne(
+        { _id: item.caseId },
+        {
+          $set: {
+            popularStatus: 'published',
+            popularActive: true,
+            popularPublishedAt: pubAt,
+            popularBatchDate: batchDate,
+            popularQueued: false,
+            forceToday: false,
+          },
+        },
+      );
+    }
+
     await this.invalidateLandingCache();
 
-    return { ok: true };
+    this.logger.log(`publishDailyBatch: published ${batch.length} case(s)`);
+    return {
+      published: batch.length,
+      items: batch.map(b => ({ id: String(b._id), caseId: String(b.caseId), publishedAt: b.publishedAt })),
+    };
   }
 }

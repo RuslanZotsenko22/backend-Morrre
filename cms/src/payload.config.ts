@@ -79,32 +79,73 @@ export default buildConfig({
 
     // -------- USERS
     {
-      slug: 'users',
-      admin: { useAsTitle: 'email' },
-      access: {
-        read: () => true,
-        create: ({ req }) => req.user?.collection === 'admins',
-        update: ({ req }) => req.user?.collection === 'admins',
-        delete: ({ req }) => req.user?.collection === 'admins',
+  slug: 'users',
+  
+  admin: { useAsTitle: 'email', defaultColumns: ['email', 'name', 'rating'] },
+  access: {
+    read: () => true,
+    create: ({ req }) => req.user?.collection === 'admins',
+    update: ({ req }) => req.user?.collection === 'admins',
+    delete: ({ req }) => req.user?.collection === 'admins',
+  },
+
+  
+  hooks: {
+    afterRead: [
+      async ({ doc }) => {
+        try {
+          
+          const mongoose = (await import('mongoose')).default;
+          const idStr = String((doc as any)?.id || (doc as any)?._id || '');
+          if (!idStr || !/^[0-9a-fA-F]{24}$/.test(idStr)) return doc;
+
+          const stats = await mongoose.connection
+            .collection('user_stats')
+            .findOne({ userId: new mongoose.Types.ObjectId(idStr) });
+
+          (doc as any).rating = stats?.totalScore ?? 0;
+          (doc as any).weeklyScore = stats?.weeklyScore ?? 0;
+        } catch {
+          // ignore
+        }
+        return doc;
       },
+    ],
+  },
+
+  fields: [
+    { name: 'email', type: 'email', required: true, unique: true, admin: { readOnly: true } },
+    { name: 'name', type: 'text' },
+    { name: 'avatar', type: 'text' },
+    { name: 'about', type: 'textarea' },
+    { name: 'location', type: 'text' },
+    {
+      name: 'socials',
+      type: 'array',
       fields: [
-        { name: 'email', type: 'email', required: true, unique: true, admin: { readOnly: true } },
-        { name: 'name', type: 'text' },
-        { name: 'avatar', type: 'text' },
-        { name: 'about', type: 'textarea' },
-        { name: 'location', type: 'text' },
-        {
-          name: 'socials',
-          type: 'array',
-          fields: [
-            { name: 'type', type: 'text' },
-            { name: 'url', type: 'text' },
-          ],
-        },
-        { name: 'passwordHash', type: 'text', admin: { readOnly: true } },
-        { name: 'roles', type: 'array', fields: [{ name: 'value', type: 'text' }], admin: { readOnly: true } },
+        { name: 'type', type: 'text' },
+        { name: 'url', type: 'text' },
       ],
     },
+    { name: 'passwordHash', type: 'text', admin: { readOnly: true } },
+    { name: 'roles', type: 'array', fields: [{ name: 'value', type: 'text' }], admin: { readOnly: true } },
+
+    
+    {
+      name: 'rating',
+      type: 'number',
+      label: 'Rating',
+      admin: { readOnly: true, position: 'sidebar' }, 
+    },
+    {
+      name: 'weeklyScore',
+      type: 'number',
+      label: 'Weekly score',
+      admin: { readOnly: true, position: 'sidebar' },
+    },
+  ],
+},
+
 
     // -------- CASES
     {

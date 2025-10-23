@@ -12,7 +12,7 @@ import { QueueModule } from '../queue/queue.module';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
 import { PaletteService } from './palette/palette.service';
 import { InternalCasesController } from './internal-cases.controller';
-
+import { CasesInteractionsController } from './cases-interactions.controller';
 
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Follow, FollowSchema } from '../users/schemas/follow.schema';
@@ -27,6 +27,8 @@ import { DraftsJanitorService } from './drafts-janitor.service';
 
 
 import { UserStatsQueueModule } from '../users/stats/user-stats.queue.module';
+
+import { PopularQueue, PopularQueueSchema } from '../home/schemas/popular-queue.schema';
 
 @Module({
   imports: [
@@ -46,13 +48,16 @@ import { UserStatsQueueModule } from '../users/stats/user-stats.queue.module';
     MediaModule,
     forwardRef(() => QueueModule),
 
+    MongooseModule.forFeature([
+  { name: PopularQueue.name, schema: PopularQueueSchema },
+]),
     
     UserStatsQueueModule,
   ],
   controllers: [
     CasesController,
     InternalCasesController,
-
+CasesInteractionsController,
     
     CaseDraftsController,
   ],
