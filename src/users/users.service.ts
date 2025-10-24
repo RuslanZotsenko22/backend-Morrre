@@ -1,5 +1,5 @@
 
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException,BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { Model } from 'mongoose';
@@ -43,7 +43,7 @@ export class UsersService {
   async updateProfile(id: string, patch: Partial<User>) {
     try {
       this.normalizeUsernamePair(patch);
-      const u = await this.userModel.findByIdAndUpdate(id, patch, { new: true });
+      const u = await this.userModel.findByIdAndUpdate(id, patch, { new: true, runValidators: true });
       if (!u) throw new NotFoundException('User not found');
       return this.publicUser(u);
     } catch (err: any) {
@@ -76,7 +76,7 @@ export class UsersService {
   // ---------- Password change (bcryptjs) ----------
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
     if (!oldPassword || !newPassword) {
-      throw new Error('oldPassword and newPassword are required');
+      throw new BadRequestException('oldPassword and newPassword are required');
     }
 
     // passwordHash має select:false у схемі → додаємо вручну
@@ -84,7 +84,7 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok) throw new Error('Old password is incorrect');
+    if (!ok)  throw new BadRequestException('OLD_PASSWORD_INCORRECT');
 
     const saltRounds = 10;
     user.passwordHash = await bcrypt.hash(newPassword, saltRounds);
@@ -94,27 +94,45 @@ export class UsersService {
   }
 
   // ---------- Username helpers ----------
-  async findByUsername(username: string) {
-    if (!username) return null;
-    const usernameLower = String(username).trim().toLowerCase();
-    if (!usernameLower) return null;
-    return this.userModel.findOne({ usernameLower });
-  }
+  private escapeRegex(input: string) {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-  async isUsernameAvailable(u: string, excludeId?: string) {
-    const username = u?.trim();
-    if (!username || username.length < 3) return false;
+async findByUsername(username: string) {
+  if (!username) return null;
+  const u = String(username).trim();
+  if (!u) return null;
+  const uLower = u.toLowerCase();
 
-    const usernameLower = username.toLowerCase();
-    const found = await this.userModel
-      .findOne({
-        usernameLower,
-        ...(excludeId ? { _id: { $ne: excludeId } } : {}),
-      })
-      .lean();
+  // шукаємо або по нормалізованому полю, або по старому `username` (case-insensitive)
+  return this.userModel.findOne({
+    $or: [
+      { usernameLower: uLower },
+      { username: { $regex: `^${this.escapeRegex(u)}$`, $options: 'i' } },
+    ],
+  });
+}
 
-    return !found;
-  }
+async isUsernameAvailable(u: string, excludeId?: string) {
+  const username = u?.trim();
+  if (!username || username.length < 3) return false;
+
+  const uLower = username.toLowerCase();
+
+  const found = await this.userModel.findOne({
+    $and: [
+      {
+        $or: [
+          { usernameLower: uLower },
+          { username: { $regex: `^${this.escapeRegex(username)}$`, $options: 'i' } },
+        ],
+      },
+      ...(excludeId ? [{ _id: { $ne: excludeId } }] : []),
+    ],
+  }).lean();
+
+  return !found;
+}
 
   // ---------- Public profile by username ----------
   async getPublicProfileByUsername(username: string) {

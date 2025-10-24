@@ -1,5 +1,3 @@
-
-
 import { 
   Controller, 
   Get, 
@@ -14,12 +12,14 @@ import {
   UseInterceptors,
   UploadedFile,
   Param,
+  BadRequestException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-
 import { UsersRatingService } from './users-rating.service';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Express } from 'express';
+import * as multer from 'multer';
 
 @Controller('users')
 export class UsersController {
@@ -61,27 +61,46 @@ export class UsersController {
     return this.users.updateProfile(req.user.userId, body);
   }
 
-  
   @UseGuards(JwtAuthGuard)
   @Patch('me/password')
   changePassword(@Req() req, @Body() body: any) {
-    
     return (this.users as any).changePassword
       ? (this.users as any).changePassword(req.user.userId, body?.oldPassword, body?.newPassword)
       : { ok: false, message: 'changePassword service method is not implemented' };
   }
 
-  
+  // === FIXED AVATAR UPLOAD ROUTE ===
   @UseGuards(JwtAuthGuard)
   @Post('me/avatar')
-  @UseInterceptors(FileInterceptor('file'))
-  uploadAvatar(@Req() req, @UploadedFile() file: Express.Multer.File) {
-    return (this.users as any).uploadAvatar
-      ? (this.users as any).uploadAvatar(req.user.userId, file)
-      : { ok: false, message: 'uploadAvatar service method is not implemented' };
+  @UseInterceptors(FileInterceptor('avatar', {
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype?.startsWith('image/')) {
+        return cb(new BadRequestException('Only image/* files are allowed'), false);
+      }
+      cb(null, true);
+    },
+  }))
+  async uploadAvatar(@Req() req, @UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file provided (field name must be "avatar")');
+    }
+
+    try {
+      return (this.users as any).uploadAvatar
+        ? await (this.users as any).uploadAvatar(req.user.userId, file)
+        : { ok: false, message: 'uploadAvatar service method is not implemented' };
+    } catch (e: any) {
+      if (e?.name === 'MulterError') {
+        // напр. LIMIT_FILE_SIZE
+        throw new BadRequestException(e.message);
+      }
+      // інші помилки (наприклад Cloudinary) підуть у глобальний фільтр
+      throw e;
+    }
   }
 
-  
   @UseGuards(JwtAuthGuard)
   @Delete('me')
   deleteMe(@Req() req) {
@@ -90,10 +109,8 @@ export class UsersController {
       : { ok: false, message: 'softDelete service method is not implemented' };
   }
 
-  
   @Get('by-username/:username/profile')
   getPublicByUsername(@Param('username') username: string) {
-    
     return (this.users as any).getPublicProfileByUsername
       ? (this.users as any).getPublicProfileByUsername(username)
       : { ok: false, message: 'getPublicProfileByUsername service method is not implemented' };

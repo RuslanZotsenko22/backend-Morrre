@@ -1947,5 +1947,28 @@ public async bumpLifeScore(caseId: string, delta = 1) {
   return { lifeScore: res?.lifeScore ?? null };
 }
 
+public async unpublishDeadPopular(): Promise<{ matched: number; modified: number }> {
+  const res = await this.caseModel.updateMany(
+    { popularActive: true, lifeScore: { $lte: 0 } },
+    {
+      $set: { popularActive: false },
+      $unset: { popularBatchDate: '', popularPublishedAt: '' },
+    },
+    { strict: false }
+  );
+
+  // інвалідуємо кеші, бо головна/дискавер зміняться
+  try {
+    await Promise.allSettled([
+      this.cache.del(`${this.prefix}discover`),
+      this.cache.del('home:landing:v1'),
+    ]);
+  } catch { /* ignore */ }
+
+  return {
+    matched: (res as any)?.matchedCount ?? 0,
+    modified: (res as any)?.modifiedCount ?? 0,
+  };
+}
 
 }

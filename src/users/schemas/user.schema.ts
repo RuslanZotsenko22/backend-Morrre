@@ -75,29 +75,50 @@ UserSchema.index({ totalUserScore: -1 });  // сортування/ранжув�
 
 UserSchema.pre('save', function (next) {
   // @ts-ignore
-  if (this.isModified('username') && this.username) {
+  if (this.isModified('username')) {
     // @ts-ignore
-    this.usernameLower = String(this.username).trim().toLowerCase();
+    const u = this.username;
+    // @ts-ignore
+    this.usernameLower = u ? String(u).trim().toLowerCase() : undefined;
   }
   next();
 });
 
+
 UserSchema.pre('findOneAndUpdate', function (next) {
   const update: any = this.getUpdate() || {};
+  const $set = update.$set ?? {};
+  const $unset = update.$unset ?? {};
 
+  
   const nextUsername =
-    update?.username ??
-    update?.$set?.username ??
-    update?.$set?.['username'];
+    (Object.prototype.hasOwnProperty.call(update, 'username') ? update.username : undefined) ??
+    (Object.prototype.hasOwnProperty.call($set, 'username') ? $set.username : undefined);
 
-  if (nextUsername) {
-    const normalized = String(nextUsername).trim().toLowerCase();
-    if (update.$set) {
-      update.$set.usernameLower = normalized;
-    } else {
-      update.usernameLower = normalized;
+  
+  if ($unset && ($unset.username || $unset['username'])) {
+    update.$unset = { ...$unset, usernameLower: 1 };
+    this.setUpdate(update);
+    return next();
+  }
+
+  
+  if (typeof nextUsername !== 'undefined') {
+    const normalized = nextUsername ? String(nextUsername).trim().toLowerCase() : undefined;
+
+    
+    if (!update.$set) update.$set = {};
+    update.$set.usernameLower = normalized;
+
+    if (!nextUsername) {
+      
+      delete update.$set.username;
+      delete update.$set.usernameLower;
+      update.$unset = { ...(update.$unset || {}), username: 1, usernameLower: 1 };
     }
+
     this.setUpdate(update);
   }
+
   next();
 });

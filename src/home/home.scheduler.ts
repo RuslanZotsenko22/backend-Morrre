@@ -27,6 +27,15 @@ export class PopularScheduler {
     this.log.log(`Running hourly lifeScore decay DEC=${DEC}`);
     const res = await this.cases.decayLifeScoresHourly({ onlyPopular: true, decay: DEC });
     this.log.log(`Decay matched=${res.matched}, modified=${res.modified}`);
+
+    try {
+    const off = await this.cases.unpublishDeadPopular();
+    if (off.modified > 0) {
+      this.log.log(`Unpublished from Popular due to lifeScore<=0: modified=${off.modified}`);
+    }
+  } catch (e) {
+    this.log.error(`unpublishDeadPopular failed: ${e instanceof Error ? e.message : e}`);
+  }
   }
 
   // =========================
