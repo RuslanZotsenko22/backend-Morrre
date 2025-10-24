@@ -1,13 +1,21 @@
-
-import { Injectable, NotFoundException, ConflictException,BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 
+// ⬇⬇⬇ ДОДАНО: локальний медіа-сервіс (опційно)
+import { MediaService } from '../media/media.service';
+
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+
+    // ⬇⬇⬇ ДОДАНО: опційні адаптери для завантаження файлів
+    @Optional() private readonly media?: MediaService,
+    @Optional() private readonly cloudinary?: { upload: (file: Express.Multer.File, opts?: any) => Promise<any> },
+  ) {}
 
   publicUser(u: any) {
     if (!u) return null;
@@ -16,11 +24,10 @@ export class UsersService {
     return rest;
   }
 
-  
   private normalizeUsernamePair(patch: Partial<User>) {
     if (typeof patch?.username === 'string') {
       const raw = patch.username.trim();
-      patch.username = raw || undefined; 
+      patch.username = raw || undefined;
       (patch as any).usernameLower = raw ? raw.toLowerCase() : undefined;
     }
     return patch;
@@ -84,7 +91,7 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok)  throw new BadRequestException('OLD_PASSWORD_INCORRECT');
+    if (!ok) throw new BadRequestException('OLD_PASSWORD_INCORRECT');
 
     const saltRounds = 10;
     user.passwordHash = await bcrypt.hash(newPassword, saltRounds);
@@ -95,44 +102,44 @@ export class UsersService {
 
   // ---------- Username helpers ----------
   private escapeRegex(input: string) {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 
-async findByUsername(username: string) {
-  if (!username) return null;
-  const u = String(username).trim();
-  if (!u) return null;
-  const uLower = u.toLowerCase();
+  async findByUsername(username: string) {
+    if (!username) return null;
+    const u = String(username).trim();
+    if (!u) return null;
+    const uLower = u.toLowerCase();
 
-  // шукаємо або по нормалізованому полю, або по старому `username` (case-insensitive)
-  return this.userModel.findOne({
-    $or: [
-      { usernameLower: uLower },
-      { username: { $regex: `^${this.escapeRegex(u)}$`, $options: 'i' } },
-    ],
-  });
-}
+    // шукаємо або по нормалізованому полю, або по старому `username` (case-insensitive)
+    return this.userModel.findOne({
+      $or: [
+        { usernameLower: uLower },
+        { username: { $regex: `^${this.escapeRegex(u)}$`, $options: 'i' } },
+      ],
+    });
+  }
 
-async isUsernameAvailable(u: string, excludeId?: string) {
-  const username = u?.trim();
-  if (!username || username.length < 3) return false;
+  async isUsernameAvailable(u: string, excludeId?: string) {
+    const username = u?.trim();
+    if (!username || username.length < 3) return false;
 
-  const uLower = username.toLowerCase();
+    const uLower = username.toLowerCase();
 
-  const found = await this.userModel.findOne({
-    $and: [
-      {
-        $or: [
-          { usernameLower: uLower },
-          { username: { $regex: `^${this.escapeRegex(username)}$`, $options: 'i' } },
-        ],
-      },
-      ...(excludeId ? [{ _id: { $ne: excludeId } }] : []),
-    ],
-  }).lean();
+    const found = await this.userModel.findOne({
+      $and: [
+        {
+          $or: [
+            { usernameLower: uLower },
+            { username: { $regex: `^${this.escapeRegex(username)}$`, $options: 'i' } },
+          ],
+        },
+        ...(excludeId ? [{ _id: { $ne: excludeId } }] : []),
+      ],
+    }).lean();
 
-  return !found;
-}
+    return !found;
+  }
 
   // ---------- Public profile by username ----------
   async getPublicProfileByUsername(username: string) {
@@ -151,15 +158,17 @@ async isUsernameAvailable(u: string, excludeId?: string) {
   async uploadAvatar(userId: string, file: Express.Multer.File) {
     if (!file) throw new Error('File is required');
 
+    // спочатку пробуємо cloudinary, потім локальний media
     const uploader =
-      (this as any).cloudinary?.upload ||
-      (this as any).media?.upload;
+      this.cloudinary?.upload ||
+      this.media?.upload;
 
     if (!uploader) {
+      // зберігаємо твоє повідомлення про відсутність провайдера
       throw new Error('Uploader is not wired: expected cloudinary.upload(file) or media.upload(file)');
     }
 
-    const res = await uploader(file, { folder: 'morrre/avatars' });
+    const res = await uploader(file, { folder: 'avatars' }); // папка узагальнена
     const url = res?.secure_url || res?.url;
     if (!url) {
       throw new Error('Upload failed: no URL returned from uploader');
@@ -182,7 +191,7 @@ async isUsernameAvailable(u: string, excludeId?: string) {
           about: '',
           location: '',
           socials: {},
-          // avatarUrl: undefined, 
+          // avatarUrl: undefined,
         },
       },
     );

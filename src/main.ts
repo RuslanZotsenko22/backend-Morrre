@@ -28,8 +28,12 @@ async function bootstrap() {
   // 2) Статика для завантажень hire (без префікса /api — так простіше)
   app.use('/uploads/hire', express.static(join(process.cwd(), 'uploads', 'hire')))
 
-// статика для кейсів (drafts / final)
+  // статика для кейсів (drafts / final)
   app.use('/uploads/cases', express.static(join(process.cwd(), 'uploads', 'cases')))
+
+  // ⬇⬇⬇ ДОДАНО: статика для public і public/uploads
+  app.use('/public', express.static(join(process.cwd(), 'public')))
+  app.use('/uploads', express.static(join(process.cwd(), 'public', 'uploads')))
 
   // 3) Глобальний префікс API
   app.setGlobalPrefix('api')
@@ -44,7 +48,7 @@ async function bootstrap() {
   // 6) Валідація DTO
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }))
 
- // 6.1) Глобальний фільтр Mongo duplicate key (E11000) → 400 замість 500
+  // 6.1) Глобальний фільтр Mongo duplicate key (E11000) → 400 замість 500
   app.useGlobalFilters(new MongoDuplicateKeyFilter());
 
   // 7) Swagger

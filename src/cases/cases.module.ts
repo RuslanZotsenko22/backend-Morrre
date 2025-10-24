@@ -29,7 +29,7 @@ import { DraftsJanitorService } from './drafts-janitor.service';
 import { UserStatsQueueModule } from '../users/stats/user-stats.queue.module';
 
 import { PopularQueue, PopularQueueSchema } from '../home/schemas/popular-queue.schema';
-
+import { VideoQueue } from '../queue/video.queue'
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -46,6 +46,7 @@ import { PopularQueue, PopularQueueSchema } from '../home/schemas/popular-queue.
       { name: CaseDraft.name, schema: CaseDraftSchema },
     ]),
     MediaModule,
+     
     forwardRef(() => QueueModule),
 
     MongooseModule.forFeature([
