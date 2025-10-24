@@ -296,7 +296,7 @@ export class UsersRatingService {
     return `users:rating:${this.CACHE_VER}:${period}`;
   }
 
-  /** Безпечна інвалідація обох ключів (all + weekly) */
+  
   private async invalidateCacheSafe() {
     try { await this.cache.del(this.key('all')); } catch {}
     try { await this.cache.del(this.key('weekly')); } catch {}

@@ -28,33 +28,29 @@ export class AuthService {
 
   // ========= OTP FLOW (email → code → complete-register) =========
 
-  /** 1) Надіслати код на email */
- async requestCode(email: string) {
-  // Якщо користувач із таким email вже існує — одразу 400
-  const existing = await this.users.findByEmail(email);
-  if (existing) {
-    throw new BadRequestException('Email already registered');
+ 
+  async requestCode(email: string) {
+    const existing = await this.users.findByEmail(email);
+    if (existing) {
+      throw new BadRequestException('Email already registered');
+    }
+
+    const code = this.generateOtp(); // 6 цифр
+    const codeHash = await bcrypt.hash(code, 10);
+
+    const otpKey = this.otpKey(email);
+    const payload = JSON.stringify({
+      email,
+      codeHash,
+      attempts: 0,
+      expiresAt: Date.now() + this.OTP_TTL_MIN * 60_000,
+    });
+    await this.redis.set(otpKey, payload, 'EX', this.OTP_TTL_MIN * 60);
+
+    await this.sendOtpEmail(email, code);
+    return { ok: true };
   }
 
-  const code = this.generateOtp(); // 6 цифр
-  const codeHash = await bcrypt.hash(code, 10);
-
-  const otpKey = this.otpKey(email);
-  const payload = JSON.stringify({
-    email,
-    codeHash,
-    attempts: 0,
-    expiresAt: Date.now() + this.OTP_TTL_MIN * 60_000,
-  });
-  await this.redis.set(otpKey, payload, 'EX', this.OTP_TTL_MIN * 60);
-
-  await this.sendOtpEmail(email, code);
-  return { ok: true };
-}
-
-
-
-  /** 2) Перевірити код і видати одноразовий токен */
   async verifyCode(email: string, code: string) {
     const otpKey = this.otpKey(email);
     const raw = await this.redis.get(otpKey);
@@ -78,7 +74,7 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired code');
     }
 
-    // Код валідний → видаємо одноразовий токен, який front передасть у complete-register
+   
     const token = crypto.randomBytes(24).toString('hex');
     const tokenKey = this.tokenKey(token);
     const tokenPayload = JSON.stringify({
@@ -88,13 +84,11 @@ export class AuthService {
     });
     await this.redis.set(tokenKey, tokenPayload, 'EX', this.VERIFY_TOKEN_TTL_MIN * 60);
 
-    // Інвалідовуємо OTP (щоб не можна було повторно верифікувати)
     await this.redis.del(otpKey);
 
     return { token };
   }
 
-  /** 3) Завершити реєстрацію (token + username, name, password) */
   async completeRegister(dto: { token: string; username: string; name: string; password: string }) {
     const tokenKey = this.tokenKey(dto.token);
     const raw = await this.redis.get(tokenKey);
@@ -108,7 +102,6 @@ export class AuthService {
 
     const email = rec.email;
 
-    // Перевірки унікальності
     const exists = await this.users.findByEmail(email);
     if (exists) throw new BadRequestException('Email already in use');
 
@@ -125,14 +118,14 @@ export class AuthService {
       passwordHash,
     });
 
-    // Інвалідовуємо одноразовий токен
+    
     await this.redis.del(tokenKey);
 
     const tokens = await this.issueTokens((user as any)._id ?? (user as any).id);
     return { user: this.users.publicUser ? this.users.publicUser(user as any) : user, ...tokens };
   }
 
-  // ========= LEGACY/ІСНУЮЧИЙ ФЛОУ (не чіпав) =========
+  // ========= LEGACY =========
 
   async register(dto: { email: string; name: string; password: string }) {
     const exists = await this.users.findByEmail(dto.email);
@@ -177,7 +170,7 @@ export class AuthService {
   // ========= helpers =========
 
   private generateOtp(): string {
-    // 6-значний з лідируючими нулями
+    
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
@@ -189,14 +182,21 @@ export class AuthService {
     return `otp_token:${token}`;
   }
 
-  /** Повертає залишок TTL у секундах для перезапису ключа без продовження життя */
+  // --- Reset-password Redis keys ---
+  private resetOtpKey(email: string) {
+    return `reset:otp:${email.toLowerCase()}`;
+  }
+  private resetTokenKey(token: string) {
+    return `reset:token:${token}`;
+  }
+
   private remainingTtlSeconds(expiresAtMs: number) {
     const left = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
     return left || 1;
-  }
+    }
 
   private async sendOtpEmail(email: string, code: string) {
-    // Якщо SMTP не налаштований — тихо скіпаємо
+   
     if (!process.env.SMTP_HOST || !process.env.SMTP_USER) return;
 
     try {
@@ -208,7 +208,112 @@ export class AuthService {
         html: `<p>Ваш код: <b>${code}</b>. Дійсний ${this.OTP_TTL_MIN} хв.</p>`,
       });
     } catch {
-      // Не валимо флоу, але в реалі краще логувати
+      // no-op
     }
+  }
+
+  // ========= Password Reset (Redis-based) =========
+
+  
+  async requestPasswordReset(email: string) {
+    try {
+      
+      const code = this.generateOtp();
+      const codeHash = await bcrypt.hash(code, 10);
+
+      const key = this.resetOtpKey(email);
+      const ttlSec = 10 * 60; 
+
+      const payload = JSON.stringify({
+        email,
+        codeHash,
+        attempts: 0,
+        expiresAt: Date.now() + ttlSec * 1000,
+      });
+
+      await this.redis.set(key, payload, 'EX', ttlSec);
+
+      
+      await this.sendOtpEmail(email, code);
+
+      return { ok: true };
+    } catch {
+      
+      return { ok: true };
+    }
+  }
+
+  
+  async verifyPasswordReset(email: string, code: string) {
+    const key = this.resetOtpKey(email);
+    const raw = await this.redis.get(key);
+    if (!raw) throw new BadRequestException('INVALID_CODE');
+
+    const rec = JSON.parse(raw) as {
+      email: string;
+      codeHash: string;
+      attempts: number;
+      expiresAt: number;
+    };
+
+    if (rec.attempts >= this.OTP_ATTEMPT_LIMIT) {
+      throw new BadRequestException('Too many attempts. Try later.');
+    }
+
+    const ok = await bcrypt.compare(code, rec.codeHash);
+    if (!ok) {
+      rec.attempts += 1;
+      const leftSec = this.remainingTtlSeconds(rec.expiresAt);
+      await this.redis.set(key, JSON.stringify(rec), 'EX', leftSec);
+      throw new BadRequestException('INVALID_CODE');
+    }
+
+    
+    await this.redis.del(key);
+
+    
+    const resetToken = crypto.randomBytes(24).toString('hex');
+    const tokenKey = this.resetTokenKey(resetToken);
+    const tokenTtl = 15 * 60;
+
+    await this.redis.set(
+      tokenKey,
+      JSON.stringify({ email, tokenIssuedAt: Date.now() }),
+      'EX',
+      tokenTtl,
+    );
+
+    return { resetToken };
+  }
+
+  
+  async completePasswordReset(resetToken: string, newPassword: string) {
+    if (!resetToken || !newPassword) {
+      throw new BadRequestException('TOKEN_AND_PASSWORD_REQUIRED');
+    }
+
+    const tokenKey = this.resetTokenKey(resetToken);
+    const raw = await this.redis.get(tokenKey);
+    if (!raw) throw new BadRequestException('INVALID_OR_EXPIRED_TOKEN');
+
+    
+    await this.redis.del(tokenKey);
+
+    const rec = JSON.parse(raw) as { email: string; tokenIssuedAt: number };
+    const email = rec?.email;
+    if (!email) throw new BadRequestException('INVALID_OR_EXPIRED_TOKEN');
+
+    
+    const user = await this.users.findByEmail(email, true);
+    
+    if (!user) return { ok: true };
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    (user as any).passwordHash = hashed;
+    await (user as any).save();
+
+    
+
+    return { ok: true };
   }
 }
