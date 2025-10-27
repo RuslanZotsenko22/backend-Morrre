@@ -30,6 +30,8 @@ import { UserStatsQueueModule } from '../users/stats/user-stats.queue.module';
 
 import { PopularQueue, PopularQueueSchema } from '../home/schemas/popular-queue.schema';
 import { VideoQueue } from '../queue/video.queue'
+import { LifeScoreService } from './life-score.service';
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -66,11 +68,13 @@ CasesInteractionsController,
     CasesService,
     RedisCacheService,
     PaletteService,
+    
 
     
     CaseDraftsService,
     DraftsJanitorService,
+    LifeScoreService
   ],
-  exports: [MongooseModule, CasesService, RedisCacheService],
+  exports: [MongooseModule, CasesService, RedisCacheService, LifeScoreService],
 })
 export class CasesModule {}

@@ -55,7 +55,7 @@ export const Cases: CollectionConfig = {
 
   fields: [
     { name: 'title', type: 'text', required: true },
-    { name: 'description', type: 'richText' },
+   { name: 'description', type: 'textarea' },
 
     {
       name: 'status',

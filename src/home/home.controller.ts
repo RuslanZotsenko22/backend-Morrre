@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CasesService } from '../cases/cases.service';
 import { CollectionsService } from '../collections/collections.service';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
@@ -11,7 +19,7 @@ export class HomeController {
     private readonly cases: CasesService,
     private readonly collections: CollectionsService,
     private readonly cache: RedisCacheService,
-    private readonly home: HomeService, // ⬅ додано для роботи з curated-чергою
+    private readonly home: HomeService,
   ) {}
 
   private readonly ttlMs = 180_000; // 3 хв
@@ -24,9 +32,9 @@ export class HomeController {
     if (hit) return hit;
 
     const [featuredCollections, popularSlides, discover] = await Promise.all([
-      this.collections.getFeatured(6),           // з кешем у CollectionsService
-      this.cases.getPopularSlides(6),            // з кешем у CasesService
-      this.cases.discoverCases({ limit: 12 }),   // з кешем у CasesService
+      this.collections.getFeatured(6),
+      this.cases.getPopularSlides(6),
+      this.cases.discoverCases({ limit: 12 }),
     ]);
 
     const data = {
@@ -40,10 +48,37 @@ export class HomeController {
     return data;
   }
 
-  /**
-   * Popular today (слайди) — ручний вибір у CMS (featuredSlides=true), 3..6
-   * ➜ тепер використовує кешований getPopularSlides()
-   */
+  /** GET /home/popular — усі кейси у популярному розділі (пагінація) */
+  @Get('popular')
+  async popular(
+    @Query('limit') limit = '12',
+    @Query('page') page = '1',
+  ) {
+    const n = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 48);
+    const p = Math.max(parseInt(page, 10) || 1, 1);
+    const data = await this.home.getPopular({ limit: n, page: p });
+    return data;
+  }
+
+  /** GET /home/collections — колекції (featured або всі, пагінація) */
+  @Get('collections')
+  async collectionsList(
+    @Query('featuredOnly') featuredOnly = 'true',
+    @Query('limit') limit = '6',
+    @Query('page') page = '1',
+  ) {
+    const n = Math.min(Math.max(parseInt(limit, 10) || 6, 1), 24);
+    const p = Math.max(parseInt(page, 10) || 1, 1);
+    const featured = featuredOnly === 'false' ? false : true;
+    const data = await this.home.getCollections({
+      featuredOnly: featured,
+      limit: n,
+      page: p,
+    });
+    return data;
+  }
+
+  /** Popular today (слайди) — ручний вибір у CMS (featuredSlides=true) */
   @Get('popular-today')
   async popularToday(@Query('limit') limit = '6') {
     const n = Math.min(Math.max(parseInt(limit, 10) || 6, 1), 12);
@@ -51,47 +86,43 @@ export class HomeController {
     return { items };
   }
 
-  /**
-   * Discover — повертає останній опублікований батч (popularBatchDate)
-   * опційно фільтр за категорією
-   * ➜ тепер використовує кешований discoverCases()
-   */
+  /** Discover — список кейсів з пагінацією та опціональним фільтром по категорії */
   @Get('discover')
-  async discover(@Query('category') category?: string, @Query('limit') limit = '8') {
-    const n = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 24);
-    const items = await this.cases.discoverCases({ category, limit: n });
-    return { items };
+  async discover(
+    @Query('category') category?: string,
+    @Query('limit') limit = '12',
+    @Query('page') page = '1',
+  ) {
+    const l = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 48);
+    const p = Math.max(parseInt(page, 10) || 1, 1);
+    return this.home.getDiscover({ category, limit: l, page: p });
   }
 
   // ===============================
-  // Curated Queue (Popular) — нове
+  // Curated Queue (Popular)
   // ===============================
 
-  /** POST /home/queue/:caseId — додати кейс у curated-чергу */
   @Post('queue/:caseId')
   async addToQueue(@Param('caseId') caseId: string) {
     const item = await this.home.addCaseToPopularQueue(caseId);
     return { item };
   }
 
-  /** GET /home/queue?status=queued|published — список елементів черги (для адмінів) */
   @Get('queue')
   async listQueue(@Query('status') status?: 'queued' | 'published') {
     const items = await this.home.listPopularQueue(status);
     return { items };
   }
 
-  /** PATCH /home/queue/:id — оновити елемент черги (status/forceToday) */
   @Patch('queue/:id')
-  async updateQueueItem(@Param('id') id: string, @Body() dto: UpdateQueueItemDto) {
+  async updateQueueItem(
+    @Param('id') id: string,
+    @Body() dto: UpdateQueueItemDto,
+  ) {
     const item = await this.home.updatePopularQueueItem(id, dto);
     return { item };
   }
 
-  /**
-   * POST /home/queue/:caseId/publish-now — примусово опублікувати кейс у Popular (поза чергою)
-   * зручно як "екстрена" кнопка в адмінці
-   */
   @Post('queue/:caseId/publish-now')
   async publishNow(@Param('caseId') caseId: string) {
     const res = await this.home.publishCaseToPopularNow(caseId);

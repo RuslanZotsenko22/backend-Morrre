@@ -27,7 +27,7 @@ export class MediaService {
     );
   }
 
-  /** Helper: заливає buffer у Cloudinary та повертає secure_url */
+  
   private uploadBuf(buffer: Buffer, folder: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
@@ -41,11 +41,7 @@ export class MediaService {
     });
   }
 
-  /**
-   * Сумісний метод для аватарів/одиночних зображень.
-   * Якщо Cloudinary налаштовано — вантажимо в Cloudinary (webp).
-   * Інакше — фолбек локально у /uploads/{folder}.
-   */
+  
   upload = async (
     file: Express.Multer.File,
     opts?: { folder?: string; filename?: string },
@@ -84,10 +80,7 @@ export class MediaService {
     return { url, secure_url: url, path: outPath };
   };
 
-  /**
-   * Генерує варіанти (low/mid/full).
-   * Cloudinary → три webp у різні папки; інакше — локальний фолбек.
-   */
+  
   uploadImageVariants = async (file: Express.Multer.File) => {
     if (!file) throw new BadRequestException('File is required');
     if (!file.buffer || !file.buffer.length) {

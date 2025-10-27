@@ -1,10 +1,10 @@
+
 import path from 'path'
 import { buildConfig } from 'payload'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { mongooseAdapter } from '@payloadcms/db-mongodb'
 import nodemailer from 'nodemailer'
 
-// ⬇⬇⬇ імпорт колекції PopularQueue
 import PopularQueue from './collections/PopularQueue'
 
 // ---- Mongo URL / Secret
@@ -19,7 +19,6 @@ function toArrayOfValueObjects(input: unknown, limit = 50): Array<{ value: strin
     const t = s.trim()
     if (t && !out.some(x => x.value === t)) out.push({ value: t })
   }
-
   if (typeof input === 'string') {
     push(input)
   } else if (Array.isArray(input)) {
@@ -79,73 +78,65 @@ export default buildConfig({
 
     // -------- USERS
     {
-  slug: 'users',
-  
-  admin: { useAsTitle: 'email', defaultColumns: ['email', 'name', 'rating'] },
-  access: {
-    read: () => true,
-    create: ({ req }) => req.user?.collection === 'admins',
-    update: ({ req }) => req.user?.collection === 'admins',
-    delete: ({ req }) => req.user?.collection === 'admins',
-  },
-
-  
-  hooks: {
-    afterRead: [
-      async ({ doc }) => {
-        try {
-          
-          const mongoose = (await import('mongoose')).default;
-          const idStr = String((doc as any)?.id || (doc as any)?._id || '');
-          if (!idStr || !/^[0-9a-fA-F]{24}$/.test(idStr)) return doc;
-
-          const stats = await mongoose.connection
-            .collection('user_stats')
-            .findOne({ userId: new mongoose.Types.ObjectId(idStr) });
-
-          (doc as any).rating = stats?.totalScore ?? 0;
-          (doc as any).weeklyScore = stats?.weeklyScore ?? 0;
-        } catch {
-          // ignore
-        }
-        return doc;
+      slug: 'users',
+      admin: { useAsTitle: 'email', defaultColumns: ['email', 'name', 'rating'] },
+      access: {
+        read: () => true,
+        create: ({ req }) => req.user?.collection === 'admins',
+        update: ({ req }) => req.user?.collection === 'admins',
+        delete: ({ req }) => req.user?.collection === 'admins',
       },
-    ],
-  },
+      hooks: {
+        afterRead: [
+          async ({ doc }) => {
+            try {
+              const mongoose = (await import('mongoose')).default;
+              const idStr = String((doc as any)?.id || (doc as any)?._id || '');
+              if (!idStr || !/^[0-9a-fA-F]{24}$/.test(idStr)) return doc;
 
-  fields: [
-    { name: 'email', type: 'email', required: true, unique: true, admin: { readOnly: true } },
-    { name: 'name', type: 'text' },
-    { name: 'avatar', type: 'text' },
-    { name: 'about', type: 'textarea' },
-    { name: 'location', type: 'text' },
-    {
-      name: 'socials',
-      type: 'array',
+              const stats = await mongoose.connection
+                .collection('user_stats')
+                .findOne({ userId: new mongoose.Types.ObjectId(idStr) });
+
+              (doc as any).rating = stats?.totalScore ?? 0;
+              (doc as any).weeklyScore = stats?.weeklyScore ?? 0;
+            } catch {
+              // ignore
+            }
+            return doc;
+          },
+        ],
+      },
       fields: [
-        { name: 'type', type: 'text' },
-        { name: 'url', type: 'text' },
+        { name: 'email', type: 'email', required: true, unique: true, admin: { readOnly: true } },
+        { name: 'name', type: 'text' },
+        { name: 'avatar', type: 'text' },
+        { name: 'about', type: 'textarea' },
+        { name: 'location', type: 'text' },
+        {
+          name: 'socials',
+          type: 'array',
+          fields: [
+            { name: 'type', type: 'text' },
+            { name: 'url', type: 'text' },
+          ],
+        },
+        { name: 'passwordHash', type: 'text', admin: { readOnly: true } },
+        { name: 'roles', type: 'array', fields: [{ name: 'value', type: 'text' }], admin: { readOnly: true } },
+        {
+          name: 'rating',
+          type: 'number',
+          label: 'Rating',
+          admin: { readOnly: true, position: 'sidebar' },
+        },
+        {
+          name: 'weeklyScore',
+          type: 'number',
+          label: 'Weekly score',
+          admin: { readOnly: true, position: 'sidebar' },
+        },
       ],
     },
-    { name: 'passwordHash', type: 'text', admin: { readOnly: true } },
-    { name: 'roles', type: 'array', fields: [{ name: 'value', type: 'text' }], admin: { readOnly: true } },
-
-    
-    {
-      name: 'rating',
-      type: 'number',
-      label: 'Rating',
-      admin: { readOnly: true, position: 'sidebar' }, 
-    },
-    {
-      name: 'weeklyScore',
-      type: 'number',
-      label: 'Weekly score',
-      admin: { readOnly: true, position: 'sidebar' },
-    },
-  ],
-},
-
 
     // -------- CASES
     {
@@ -159,7 +150,7 @@ export default buildConfig({
       },
       fields: [
         { name: 'title', type: 'text', required: true },
-        { name: 'description', type: 'richText' },
+        { name: 'description', type: 'textarea' },
         { name: 'status', type: 'select', options: ['draft', 'published'], defaultValue: 'draft' },
         { name: 'industry', type: 'text' },
         { name: 'tags', type: 'array', fields: [{ name: 'value', type: 'text', required: true }] },
@@ -210,6 +201,7 @@ export default buildConfig({
         {
           name: 'cover',
           type: 'group',
+          defaultValue: { url: '', sizes: { low: '', medium: '', high: '' } },
           fields: [
             { name: 'url', type: 'text' },
             {
@@ -263,7 +255,7 @@ export default buildConfig({
           },
         },
 
-        // ---------- Popular meta (згруповано у вкладку)
+        // ---------- Popular meta 
         {
           type: 'tabs',
           tabs: [
@@ -334,14 +326,27 @@ export default buildConfig({
           ],
         },
       ],
-
       hooks: {
         beforeRead: [
           async ({ doc }) => {
             if (!doc) return doc
             try {
               if (doc.tags !== undefined) (doc as any).tags = toArrayOfValueObjects(doc.tags, 50)
+
               if (doc.categories !== undefined) (doc as any).categories = toArrayOfValueObjects(doc.categories, 50)
+                if ((doc as any).cover == null || typeof (doc as any).cover !== 'object') {
+          (doc as any).cover = { url: '', sizes: { low: '', medium: '', high: '' } }
+        } else {
+          if ((doc as any).cover.sizes == null || typeof (doc as any).cover.sizes !== 'object') {
+            (doc as any).cover.sizes = { low: '', medium: '', high: '' }
+          } else {
+            const sz = (doc as any).cover.sizes
+            if (sz.low == null) sz.low = ''
+            if (sz.medium == null) sz.medium = ''
+            if (sz.high == null) sz.high = ''
+          }
+          if ((doc as any).cover.url == null) (doc as any).cover.url = ''
+        }
             } catch { /* ignore */ }
             return doc
           },
@@ -349,10 +354,14 @@ export default buildConfig({
       },
     },
 
-    // -------- COLLECTIONS
+    // -------- COLLECTIONS 
     {
       slug: 'collections',
-      admin: { useAsTitle: 'title' },
+      admin: {
+        useAsTitle: 'title',
+        defaultColumns: ['title', 'featured', 'order', 'createdAt'], 
+        description: 'Ручні добірки кейсів для /collections та головної (featured).', 
+      },
       access: {
         read: () => true,
         create: ({ req }) => req.user?.collection === 'admins',
@@ -388,9 +397,37 @@ export default buildConfig({
         { name: 'featured', type: 'checkbox', defaultValue: false, label: 'Показувати на головній' },
         { name: 'order', type: 'number', defaultValue: 0 },
       ],
+      // ← додано інвалідацію кешу головної при зміні/видаленні колекції
+      hooks: {
+        afterChange: [
+          async () => {
+            try {
+              await fetch(`${process.env.NEST_API_URL}/api/internal/home/invalidate-landing`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Internal-Secret': process.env.INTERNAL_SECRET || '',
+                },
+              })
+            } catch {/* ignore */}
+          },
+        ],
+        afterDelete: [
+          async () => {
+            try {
+              await fetch(`${process.env.NEST_API_URL}/api/internal/home/invalidate-landing`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Internal-Secret': process.env.INTERNAL_SECRET || '',
+                },
+              })
+            } catch {/* ignore */}
+          },
+        ],
+      },
     },
 
-    // -------- PopularQueue
     PopularQueue,
   ],
 

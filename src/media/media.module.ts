@@ -1,4 +1,4 @@
-// src/media/media.module.ts
+
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
@@ -10,7 +10,7 @@ import { Case, CaseSchema } from '../cases/schemas/case.schema';
 import { VimeoApi } from './vimeo.api';
 import { ImageVariantsService } from './image-variants.service';
 
-// ВАЖЛИВО: використовуємо Cloudinary-реалізацію MediaService
+
 import { MediaService } from './cloudinary.service';
 
 @Module({
@@ -22,9 +22,9 @@ import { MediaService } from './cloudinary.service';
   ],
   controllers: [VimeoWebhookController],
   providers: [
-    MediaService,          // Cloudinary + fallback на локальні варіанти
+    MediaService,          
     VimeoApi,
-    ImageVariantsService,  // потрібен для фолбеку локальних варіантів
+    ImageVariantsService,  
   ],
   exports: [
     MediaService,

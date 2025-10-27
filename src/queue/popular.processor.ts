@@ -20,7 +20,7 @@ export class PopularProcessor implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    // окрема воркер-нитка на чергу popular-jobs
+    // ВАЖЛИВО: назва черги тут має збігатися з тією, яку реєструєш у bullmq.provider (POPULAR_QUEUE)
     new Worker(
       'popular-jobs',
       async (job) => {
@@ -35,29 +35,29 @@ export class PopularProcessor implements OnModuleInit {
   }
 
   private async handleDailyPublish() {
-    // 1) Забираємо спочатку forceToday
+    // 1) Спочатку форсовані
     const force = await this.caseModel
       .find({
         status: 'published',
-        curatedQueued: true,
+        popularQueued: true,          // ← було curatedQueued
         forceToday: true,
       })
-      .sort({ curatedAddedAt: 1 })
+      .sort({ queuedAt: 1 })         // ← було curatedAddedAt
       .limit(DAILY_COUNT)
       .lean();
 
     const remain = DAILY_COUNT - force.length;
 
-    // 2) Потім звичайну чергу FIFO
+    // 2) Потім звичайна черга FIFO
     const queued =
       remain > 0
         ? await this.caseModel
             .find({
               status: 'published',
-              curatedQueued: true,
+              popularQueued: true,    // ← було curatedQueued
               forceToday: { $ne: true },
             })
-            .sort({ curatedAddedAt: 1 })
+            .sort({ queuedAt: 1 })   // ← було curatedAddedAt
             .limit(remain)
             .lean()
         : [];
@@ -69,20 +69,22 @@ export class PopularProcessor implements OnModuleInit {
     }
 
     const now = new Date();
+    // batchDate — початок доби (локальний; якщо хочеш UTC-нуль — зсунь до 00:00 UTC)
     const batchDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // 3) Помічаємо як популярні (активуємо), знімаємо з черги
+    // 3) Активуємо у Popular, знімаємо з черги, ініціалізуємо життя
     const ops = batch.map((doc) =>
       this.caseModel.updateOne(
         { _id: doc._id },
         {
           $set: {
-            curatedQueued: false,
+            popularQueued: false,
             forceToday: false,
             popularActive: true,
             popularPublishedAt: now,
             popularBatchDate: batchDate,
             lifeScore: INITIAL_LIFE,
+            popularStatus: 'published', // для швидких фільтрів
           },
         },
         { runValidators: true },
@@ -90,7 +92,6 @@ export class PopularProcessor implements OnModuleInit {
     );
 
     await Promise.all(ops);
-
     this.log.log(`daily-publish: published ${batch.length} cases`);
   }
 
@@ -100,16 +101,22 @@ export class PopularProcessor implements OnModuleInit {
       { popularActive: true, lifeScore: { $gt: 0 } },
       { $inc: { lifeScore: -DECAY_STEP } },
     );
-    this.log.debug(`hourly-decay: decayed ${res.modifiedCount} cases`);
+    this.log.debug(`hourly-decay: decayed ${res.modifiedCount ?? 0} cases`);
 
     // 2) Вимикаємо ті, що "померли"
     const res2 = await this.caseModel.updateMany(
       { popularActive: true, lifeScore: { $lte: 0 } },
-      { $set: { popularActive: false } },
+      {
+        $set: {
+          popularActive: false,
+          popularStatus: 'none',
+        },
+      },
     );
 
-    if ((res2 as any).modifiedCount) {
-      this.log.log(`hourly-decay: deactivated ${(res2 as any).modifiedCount} cases`);
+    const deactivated = (res2 as any).modifiedCount ?? (res2 as any).nModified ?? 0;
+    if (deactivated) {
+      this.log.log(`hourly-decay: deactivated ${deactivated} cases`);
     }
   }
 }
