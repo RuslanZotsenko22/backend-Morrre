@@ -6,7 +6,7 @@ export const Admins: CollectionConfig = {
    auth: true,
   admin: { useAsTitle: 'email' },
   access: {
-    read: ({ req }) => !!req.user,       // бачать лише залогінені адміни
+    read: ({ req }) => !!req.user,       
     create: ({ req }) => !!req.user,
     update: ({ req }) => !!req.user,
     delete: ({ req }) => !!req.user,

@@ -9,7 +9,7 @@ export class CreateHireRequestDto {
   @IsArray()
   @ArrayMaxSize(3)
   @IsString({ each: true })
-  categories!: string[] // відфільтруємо по WHAT_DONE_ENUM у сервісі
+  categories!: string[] 
 
   @IsOptional()
   @IsString()

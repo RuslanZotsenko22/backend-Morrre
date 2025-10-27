@@ -158,7 +158,7 @@ export class CaseDraftsService {
   caseId: draftId,
   filePath: localTmpPath,
   ensureFolder: true,
-  // ➕ координати блоку, щоб вебхук знав, куди ставити playerUrl
+  
   sectionIndex,
   blockIndex,
 })
@@ -254,7 +254,7 @@ export class CaseDraftsService {
     return { ok: true }
   }
 
-// ======== ДОДАТИ ВСЕРЕДИНУ класу CaseDraftsService ========
+
 
 /** Хелпер: витягнути Vimeo ID з будь-якого vimeo URL */
 private extractVimeoId(url?: string) {

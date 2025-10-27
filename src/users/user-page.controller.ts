@@ -1,4 +1,4 @@
-// src/users/user-page.controller.ts
+
 import { Controller, Get, Param, Query, Req, UsePipes, ValidationPipe } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { UserPageService } from './user-page.service';

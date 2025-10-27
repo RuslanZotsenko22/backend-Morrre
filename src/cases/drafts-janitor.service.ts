@@ -65,7 +65,7 @@ export class DraftsJanitorService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    // перший прогін через 2 хв після старту (щоб уникнути гонок зі свіжими аплоадами)
+    
     setTimeout(() => {
       this.runOnce().catch((e) => this.log.error(e))
     }, 2 * 60 * 1000)

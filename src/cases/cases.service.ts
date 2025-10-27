@@ -25,6 +25,9 @@ import { Queue } from 'bullmq';
 import { USER_STATS_QUEUE } from '../users/stats/user-stats.queue';
 
 
+import { PopularQueue, PopularQueueDocument } from '../home/schemas/popular-queue.schema';
+import { InteractionDto } from './dto/interaction.dto';
+
 type CaseStatus = 'draft' | 'published'
 
 /** Обкладинка кейса (з підтримкою різних розмірів) */
@@ -124,7 +127,7 @@ function sanitizeCreateDto(
   tags: string[]
   categories: string[]
   industry?: string
-  whatWasDone?: string[] // ✅ додаємо це поле
+  whatWasDone?: string[] 
 } {
   const title = (dto.title ?? '').toString().trim()
   if (!title) throw new BadRequestException('title is required')
@@ -138,13 +141,13 @@ function sanitizeCreateDto(
   const tags = normalizeStringArray(dto.tags, 20)
   const categories = normalizeStringArray(dto.categories, 3)
 
-  // ✅ industry — перевірка по ENUM
+ 
   const industry =
     dto.industry && INDUSTRY_ENUM.includes(dto.industry as any)
       ? (dto.industry as any)
       : undefined
 
-  // ✅ whatWasDone — опційне поле, фільтруємо по ENUM
+  
   const whatWasDone = Array.isArray((dto as any).whatWasDone)
     ? (dto as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
     : []
@@ -183,14 +186,14 @@ function sanitizeUpdateDto(patch: UpdateCaseDto): UpdateCaseDto {
     allowed.categories = normalizeStringArray(patch.categories, 3)
   }
 
-  // ✅ whatWasDone — перевіряємо, якщо є
+  
   if ((patch as any).whatWasDone !== undefined) {
     (allowed as any).whatWasDone = Array.isArray((patch as any).whatWasDone)
       ? (patch as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
       : []
   }
 
-  // ✅ industry — перевірка по ENUM
+  
   if (patch.industry !== undefined) {
     allowed.industry = INDUSTRY_ENUM.includes(patch.industry as any)
       ? (patch.industry as any)
@@ -212,15 +215,34 @@ constructor(
   @InjectModel(User.name)        private userModel: Model<UserDocument>,
   @InjectModel(Follow.name)      private followModel: Model<FollowDocument>,
   @InjectModel(Collection.name)  private collectionModel: Model<CollectionDocument>,
-  @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>, // ⬅️ додано
- @Inject(USER_STATS_QUEUE) private readonly userStatsQueue: Queue,
-  private readonly cache: RedisCacheService,
+  @InjectModel(CaseVote.name)    private caseVoteModel: Model<CaseVoteDocument>,
+  @Inject(USER_STATS_QUEUE)      private readonly userStatsQueue: Queue,
+  private readonly cache:        RedisCacheService,
+
+  private readonly palette:      PaletteService,
 
   
-  private readonly palette: PaletteService,
+  @InjectModel(PopularQueue.name) private readonly pqModel: Model<PopularQueueDocument>,
 
   @Optional() private readonly videoQueue?: VideoQueue,
 ) {}
+
+// lifeScore бонуси за події (можна перенести в .env)
+private readonly LIFE_BONUS = {
+  view: Number(process.env.LS_BONUS_VIEW ?? 1),
+  save: Number(process.env.LS_BONUS_SAVE ?? 5),
+  share: Number(process.env.LS_BONUS_SHARE ?? 7),
+  refLike: Number(process.env.LS_BONUS_REFLIKE ?? 3),
+};
+
+// дедуп-час у секундах (anti-spam)
+private readonly DEDUP_TTL = {
+  view: Number(process.env.LS_DEDUP_VIEW_SEC ?? 6 * 60 * 60),     // 6 год
+  save: Number(process.env.LS_DEDUP_SAVE_SEC ?? 24 * 60 * 60),    // 24 год
+  share: Number(process.env.LS_DEDUP_SHARE_SEC ?? 24 * 60 * 60),  // 24 год
+  refLike: Number(process.env.LS_DEDUP_REFLIKE_SEC ?? 24 * 60 * 60),
+};
+
 
 
 private async enqueueUserStatsForCase(caseDoc: any) {
@@ -956,62 +978,80 @@ private collectImageUrlsFromCase(caseDoc: any): string[] {
    * 2) Далі звичайні queued (FIFO)
    * В сумі не більше limit.
    */
-  public async publishDailyPopularBatch(
-    limit: number,
-  ): Promise<{ published: number; batchDate: Date }> {
-    const n = Math.max(1, Math.min(50, Number(limit) || 8))
-    const batchDate = new Date()
-    // нормалізуємо до початку доби (UTC)
-    const startOfDay = new Date(Date.UTC(batchDate.getUTCFullYear(), batchDate.getUTCMonth(), batchDate.getUTCDate()))
+public async publishDailyPopularBatch(
+  limit: number,
+): Promise<{ published: number; batchDate: Date }> {
+  const n = Math.max(1, Math.min(50, Number(limit) || 8))
+  const batchDate = new Date()
+  // початок доби (UTC)
+  const startOfDay = new Date(Date.UTC(batchDate.getUTCFullYear(), batchDate.getUTCMonth(), batchDate.getUTCDate()))
 
-    // 1) Пріоритетні
-    const forced = await this.caseModel
-      .find({ popularQueued: true, popularActive: { $ne: true }, forceToday: true })
-      .sort({ queuedAt: 1, _id: 1 })
-      .limit(n)
-      .select({ _id: 1 })
-      .lean()
+  // 1) Пріоритетні
+  const forced = await this.caseModel
+    .find({ popularQueued: true, popularActive: { $ne: true }, forceToday: true })
+    .sort({ queuedAt: 1, _id: 1 })
+    .limit(n)
+    .select({ _id: 1 })
+    .lean()
 
-    const remaining = n - forced.length
+  const remaining = n - forced.length
 
-    // 2) Звичайні
-    const normal =
-      remaining > 0
-        ? await this.caseModel
-            .find({
-              popularQueued: true,
-              popularActive: { $ne: true },
-              $or: [{ forceToday: { $ne: true } }, { forceToday: { $exists: false } }],
-            })
-            .sort({ queuedAt: 1, _id: 1 })
-            .limit(remaining)
-            .select({ _id: 1 })
-            .lean()
-        : []
+  // 2) Звичайні
+  const normal =
+    remaining > 0
+      ? await this.caseModel
+          .find({
+            popularQueued: true,
+            popularActive: { $ne: true },
+            $or: [{ forceToday: { $ne: true } }, { forceToday: { $exists: false } }],
+          })
+          .sort({ queuedAt: 1, _id: 1 })
+          .limit(remaining)
+          .select({ _id: 1 })
+          .lean()
+      : []
 
-    const ids = [...forced, ...normal].map((d) => d._id)
-    if (!ids.length) return { published: 0, batchDate: startOfDay }
+  const ids = [...forced, ...normal].map((d) => d._id)
+  if (!ids.length) return { published: 0, batchDate: startOfDay }
 
-    const now = new Date()
+  const now = new Date()
 
-    const res = await this.caseModel.updateMany(
-      { _id: { $in: ids } },
-      {
-        $set: {
-          popularActive: true,
-          popularBatchDate: startOfDay,
-          popularPublishedAt: now,
-          status: 'published', // гарантуємо видимість
-        },
-        $unset: { forceToday: '' },
+  // оновлюємо кейси
+  const res = await this.caseModel.updateMany(
+    { _id: { $in: ids } },
+    {
+      $set: {
+        popularActive: true,
+        popularBatchDate: startOfDay,
+        popularPublishedAt: now,
+        popularStatus: 'published',       // ⬅ додано
+        popularQueued: false,             // ⬅ додано: з черги прибрано
+        status: 'published',              // гарантуємо видимість на платформі
       },
-      { runValidators: true },
-    )
+      $unset: { forceToday: '' },
+    },
+    { runValidators: true },
+  )
 
-    await this.invalidateAll()
+  // якщо є модель PopularQueue — позначимо ці айтеми як published (не ламає, якщо її немає)
+  try {
+    // @ts-ignore
+    if (this.pqModel?.updateMany) {
+      // @ts-ignore
+      await this.pqModel.updateMany(
+        { caseId: { $in: ids }, status: 'queued' },
+        { $set: { status: 'published', publishedAt: now, forceToday: false } },
+      )
+    }
+  } catch { /* ignore */ }
 
-    return { published: (res as any)?.modifiedCount || ids.length, batchDate: startOfDay }
-  }
+  // інвалідації кешів
+  await this.invalidateAll?.()  // якщо у тебе є цей метод
+  try { await this.cache.del('home:landing:v1') } catch {}
+
+  return { published: (res as any)?.modifiedCount || ids.length, batchDate: startOfDay }
+}
+
 
   /**
    * MVP-апдейт engagement + lifeScore.
@@ -1071,38 +1111,52 @@ private collectImageUrlsFromCase(caseDoc: any): string[] {
    * Годинний decay lifeScore (за замовчуванням — тільки у тих, хто в Popular).
    * Значення зменшується, не опускаючись нижче 0.
    */
-  public async decayLifeScoresHourly(
-    opts?: { onlyPopular?: boolean; decay?: number },
-  ): Promise<{ matched: number; modified: number }> {
-    const onlyPopular = opts?.onlyPopular ?? true
-    const decay = Math.max(0, Number(opts?.decay ?? process.env.LIFE_DECAY_PER_HOUR ?? 5))
+public async decayLifeScoresHourly(
+  opts?: { onlyPopular?: boolean; decay?: number },
+): Promise<{ matched: number; modified: number }> {
+  const onlyPopular = opts?.onlyPopular ?? true
+  const decay = Math.max(0, Number(opts?.decay ?? process.env.LIFE_DECAY_PER_HOUR ?? 5))
 
-    const q: any = { status: 'published' }
-    if (onlyPopular) q.popularActive = true
+  const q: any = { status: 'published' }
+  if (onlyPopular) q.popularActive = true
 
-    // Зменшити lifeScore, але не нижче 0 — робимо через pipeline update
-    const res = await this.caseModel.updateMany(
-      q,
-      [
-        {
-          $set: {
-            lifeScore: {
-              $max: [
-                0,
-                { $subtract: ['$lifeScore', decay] },
-              ],
-            },
+  // 1) Зменшити lifeScore, але не нижче 0 (pipeline update)
+  const res = await this.caseModel.updateMany(
+    q,
+    [
+      {
+        $set: {
+          lifeScore: {
+            $max: [0, { $subtract: ['$lifeScore', decay] }],
           },
         },
-      ] as any,
-      { strict: false },
-    )
+      },
+    ] as any,
+    { strict: false },
+  )
 
-    // lifeScore впливає на discover сортування → інвалідуємо discover кеш
-    await this.cache.del(`${this.prefix}discover`)
+  // 2) Деактивувати з Popular тих, у кого lifeScore <= 0
+  const res2 = await this.caseModel.updateMany(
+    { ...q, lifeScore: { $lte: 0 } },
+    {
+      $set: {
+        lifeScore: 0,
+        popularActive: false, // ⬅ прибираємо з вітрини Popular
+      },
+    },
+    { strict: false },
+  )
 
-    return { matched: (res as any)?.matchedCount ?? 0, modified: (res as any)?.modifiedCount ?? 0 }
+  // інвалідації кешів (discover + головна)
+  try { await this.cache.del(`${this.prefix}discover`) } catch {}
+  try { await this.cache.del('home:landing:v1') } catch {}
+
+  return {
+    matched: (res as any)?.matchedCount ?? 0,
+    modified: ((res as any)?.modifiedCount ?? 0) + ((res2 as any)?.modifiedCount ?? 0),
   }
+}
+
 
   /**
    * Зняти кейс з Popular.
@@ -1805,6 +1859,116 @@ async deleteCase(ownerId: string, caseId: string) {
 
   return { ok: true };
 }
+/** Реєстрація взаємодії (view/save/share/refLike) + антинакрутка + lifeScore */
+public async registerInteraction(
+  caseId: string,
+  dto: InteractionDto,
+): Promise<{
+  credited: boolean;
+  newLifeScore?: number;
+  counters?: { views?: number; saves?: number; shares?: number; refsLikes?: number };
+}> {
+  const type = dto.type;
+  const actor = (dto.actor?.trim() || '').slice(0, 120); // userId або fingerprint/ip
+  const refId = (dto.refId?.trim() || '').slice(0, 120);
 
+  // базовий ключ для дедупу в Redis
+  const dedupKey = this.buildDedupKey(caseId, type, actor, refId);
+  const ttlSec = this.DEDUP_TTL[type as keyof typeof this.DEDUP_TTL] ?? 3600;
+
+  // антинакрутка: setNX, або fallback на get/set
+  let fresh = true;
+  try {
+    const anyCache: any = this.cache as any;
+    if (typeof anyCache.setNX === 'function') {
+      fresh = await anyCache.setNX(dedupKey, '1', ttlSec * 1000);
+    } else if (typeof anyCache.get === 'function' && typeof anyCache.set === 'function') {
+      const existing = await anyCache.get(dedupKey);
+      fresh = !existing;
+      if (fresh) await anyCache.set(dedupKey, '1', ttlSec * 1000);
+    }
+  } catch { /* ignore dedup errors */ }
+
+  // лічильники
+  const inc: Record<string, number> = {};
+  if (type === 'view') inc.views = 1;
+  if (type === 'save') inc.saves = 1;
+  if (type === 'share') inc.shares = 1;
+  if (type === 'refLike') inc.refsLikes = 1;
+
+  // бонус до lifeScore лише якщо подія свіжа (не задедуплена)
+  const lsBonus = fresh ? (this.LIFE_BONUS[type as keyof typeof this.LIFE_BONUS] ?? 0) : 0;
+
+  const update: any = { $inc: inc };
+  if (lsBonus > 0) {
+    update.$inc.lifeScore = (update.$inc.lifeScore || 0) + lsBonus;
+  }
+
+  // обмеження максимуму lifeScore (щоб не ріс безкінечно)
+  const maxLife = Number(process.env.LS_MAX ?? 200);
+  update.$min = { lifeScore: maxLife };
+
+  const res = await this.caseModel.findOneAndUpdate(
+    { _id: caseId },
+    update,
+    { new: true, select: { lifeScore: 1, views: 1, saves: 1, shares: 1, refsLikes: 1 } },
+  ).lean();
+
+  // швидка інвалідація кешів
+  try { await this.cache.del('home:landing:v1'); } catch {}
+  try { await this.cache.del(`${(this as any).prefix ?? ''}discover`); } catch {}
+
+  return {
+    credited: fresh,
+    newLifeScore: res?.lifeScore,
+    counters: res ? {
+      views: res.views, saves: res.saves, shares: res.shares, refsLikes: res.refsLikes,
+    } : undefined,
+  };
+}
+
+/** Хелпер: ключ для дедупу взаємодій у Redis */
+private buildDedupKey(caseId: string, type: string, actor?: string, refId?: string) {
+  const a = actor || 'anon';
+  const r = refId || '-';
+  return `ls:dedup:${type}:${caseId}:${a}:${r}`;
+}
+
+/** Підняти lifeScore на фіксовану дельту (використовуй за потреби) */
+public async bumpLifeScore(caseId: string, delta = 1) {
+  const maxLife = Number(process.env.LS_MAX ?? 200);
+  const res = await this.caseModel.findOneAndUpdate(
+    { _id: caseId },
+    { $inc: { lifeScore: delta }, $min: { lifeScore: maxLife } },
+    { new: true, select: { lifeScore: 1 } },
+  ).lean();
+  try { await this.cache.del('home:landing:v1'); } catch {}
+  try { await this.cache.del(`${(this as any).prefix ?? ''}discover`); } catch {}
+  return { lifeScore: res?.lifeScore ?? null };
+}
+
+public async unpublishDeadPopular(): Promise<{ matched: number; modified: number }> {
+  const res = await this.caseModel.updateMany(
+    { popularActive: true, lifeScore: { $lte: 0 } },
+    {
+      $set: { popularActive: false },
+      $unset: { popularBatchDate: '', popularPublishedAt: '' },
+    },
+    { strict: false }
+  );
+
+  // інвалідуємо кеші, бо головна/дискавер зміняться
+  try {
+    await Promise.allSettled([
+      this.cache.del(`${this.prefix}discover`),
+      this.cache.del('home:landing:v1'),
+    ]);
+  } catch { /* ignore */ }
+
+  return {
+    matched: (res as any)?.matchedCount ?? 0,
+    modified: (res as any)?.modifiedCount ?? 0,
+  };
+}
 
 }

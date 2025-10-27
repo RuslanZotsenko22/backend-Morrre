@@ -1,4 +1,4 @@
-// cms/src/collections/Users.ts
+
 import { CollectionConfig } from 'payload';
 
 export const Users: CollectionConfig = {
@@ -6,13 +6,13 @@ export const Users: CollectionConfig = {
   admin: { useAsTitle: 'name' },
   access: {
     read: () => true,
-    create: ({ req }) => req.user?.collection === 'admins',   // лише адміни
+    create: ({ req }) => req.user?.collection === 'admins',   
     update: ({ req }) => req.user?.collection === 'admins',
     delete: ({ req }) => req.user?.collection === 'admins',
   },
   fields: [
     { name: 'name', type: 'text', required: true },
-    { name: 'avatar', type: 'text' },               // з Cloudinary зберігай URL
+    { name: 'avatar', type: 'text' },               
     { name: 'about', type: 'textarea' },
     { name: 'location', type: 'text' },
     { name: 'socials', type: 'array', fields: [

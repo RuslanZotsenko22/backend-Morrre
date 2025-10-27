@@ -57,42 +57,132 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Deployment
+# 🚀 Branding Platform API (NestJS + MongoDB)
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+This is the **backend API** for a creative platform that powers **Cases**, **Users**, **Collections**, and a smart **Search** system — built with **NestJS**, **MongoDB**, and **Vimeo integration**.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+
+## 🌐 Overview
+
+| Parameter | Value |
+|------------|--------|
+| **Base URL** | `http://localhost:4000` |
+| **API Prefix** | `/api` |
+| **Swagger Docs** | `http://localhost:4000/docs` |
+
+## 🌐 Overview
+
+| Service | URL | Description |
+|----------|-----|-------------|
+| **Backend (NestJS)** | `http://localhost:4000` | Main API server |
+| **CMS (Payload)** | `http://localhost:3001` | Admin panel |
+| **Swagger Docs** | `http://localhost:4000/docs` | API documentation |
+
+## ⚙️ Setup
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+# 1. Clone and install
+git clone <repo-url>
+cd backend
+npm install
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+# 2. Configure ENV
+echo "
+PORT=4000
+MONGO_URI=mongodb://localhost:27017/branding
+JWT_SECRET=change_me
+" > .env
 
-## Resources
+# 3. Run locally
+npm run start:dev
+🔐 Auth
+JWT Bearer token authorization:
 
-Check out a few resources that may come in handy when working with NestJS:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Authorization: Bearer <access_token>
+Public endpoints (e.g. /api/search) don’t require auth.
 
-## Support
+Refresh tokens: /api/auth/refresh.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+🌍 CORS & Static Files
+Type	URL	Folder
+Hire uploads	/uploads/hire/...	uploads/hire
+Case uploads	/uploads/cases/...	uploads/cases
 
-## Stay in touch
+CORS allows:
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
 
-## License
+origin: ['http://localhost:3001']
+🔎 Global Search API
+Endpoint
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+GET /api/search
+Query Params
+Param	Type	Default	Description
+q	string	—	Search query
+type	`'all'	'users'	'cases'`
+limit	number (1–50)	10	Max results
+
+Example Response
+
+{
+  "q": "ann",
+  "users": [{ "displayName": "Anna", "isPro": true }],
+  "cases": [{ "title": "Branding for Café", "authorName": "Anna" }],
+  "background": { "kind": "user", "url": "https://cdn.../ann.jpg" }
+}
+Frontend tips
+Debounce 250–350 ms for input
+
+Show Users / Cases tabs
+
+Use background.url for preview area
+
+Show Pro badge if isPro === true
+
+🧩 Main Endpoints
+👤 Users
+Method	Endpoint	Description
+GET	/api/users/:id/profile	Public profile
+GET	/api/users/:id/cases	User’s cases
+GET	/api/users/:id/stats	User stats
+
+🎨 Cases
+Method	Endpoint	Description
+GET	/api/cases/:idOrSlug	Case details
+GET	/api/cases/discover	Discover feed
+GET	/api/cases/popular-slides	Popular today
+
+🗂️ Collections
+Method	Endpoint	Description
+GET	/api/collections/featured	Featured (6)
+GET	/api/collections	All collections
+GET	/api/collections/:slug	Single collection
+
+🧱 Error Format
+
+{
+  "statusCode": 400,
+  "message": "Validation failed",
+  "error": "Bad Request"
+}
+Code	Meaning
+400	Validation error
+401	Unauthorized
+403	Forbidden
+404	Not found
+429	Rate limit exceeded
+500	Server error
+
+🧰 Tech Stack
+NestJS — backend framework
+
+MongoDB + Mongoose — database
+
+Swagger — API docs
+
+Redis + BullMQ — queues
+
+Vimeo API — video integration
+
+Cloudinary (optional) — media CDN

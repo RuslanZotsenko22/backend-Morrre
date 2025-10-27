@@ -1,0 +1,1 @@
+export { MediaService } from './cloudinary.service';

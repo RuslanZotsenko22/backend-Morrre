@@ -67,7 +67,7 @@ export class VimeoApi {
       data: stream,
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
-      validateStatus: s => s >= 200 && s < 400, // tus повертає 204
+      validateStatus: s => s >= 200 && s < 400, 
     })
 
     if (req.status !== 204) {
@@ -104,8 +104,7 @@ export class VimeoApi {
         await this.client.delete(`/videos/${vid}`).catch(e => this.log.warn(`cleanup video ${vid} failed: ${e}`))
       }
     }
-    // видалити папку необов’язково; інколи краще залишити для історії
-    // await this.client.delete(`/me/projects/${folderId}`).catch(() => {})
+    
   }
 
   async deleteVideo(videoId: string) {

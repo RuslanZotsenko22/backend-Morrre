@@ -5,7 +5,7 @@ import { CreateCollectionDto } from './dto/create-collection.dto'
 import { UpdateCollectionDto } from './dto/update-collection.dto'
 
 @UseGuards(InternalSecretGuard)
-@Controller('internal/collections') // -> /api/internal/collections
+@Controller('internal/collections') 
 export class InternalCollectionsController {
   constructor(private readonly svc: CollectionsService) {}
 
