@@ -10,7 +10,7 @@ import { Follow, FollowSchema } from './schemas/follow.schema';
   ],
   controllers: [FollowsController],
   providers: [FollowsService],
-  //  робимо сервіс (і моделі) доступними для інших модулів
+  
   exports: [FollowsService, MongooseModule],
 })
 export class FollowsModule {}

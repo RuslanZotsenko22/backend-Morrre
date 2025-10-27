@@ -57,7 +57,7 @@ export class VimeoWebhookController {
           [`sections.${sectionIndex}.blocks.${blockIndex}.mediaType`]: 'video',
           [`sections.${sectionIndex}.blocks.${blockIndex}.kind`]: 'media',
 
-          // статуси
+          
           [`sections.${sectionIndex}.blocks.${blockIndex}.mediaStatus`]: 'ready',
           [`sections.${sectionIndex}.blocks.${blockIndex}.mediaError`]: undefined,
           ...(vimeoId

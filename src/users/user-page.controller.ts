@@ -4,8 +4,7 @@ import { Types } from 'mongoose';
 import { UserPageService } from './user-page.service';
 import { GetUserCasesQueryDto } from './dto/get-user-cases.query';
 
-// Працюємо під тим же префіксом, що й твій існуючий users.controller
-// (з глобальним префіксом у main.ts це буде /api/users)
+
 @Controller('users')
 export class UserPageController {
   constructor(private readonly svc: UserPageService) {}
