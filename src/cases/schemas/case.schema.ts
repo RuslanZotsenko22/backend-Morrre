@@ -29,7 +29,7 @@ export class Case {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true })
   ownerId: string;
 
-  // ⬇ contributors як масив об'єктів { userId, role }
+  // contributors як масив об'єктів { userId, role }
   @Prop({
     type: [
       {
@@ -45,18 +45,16 @@ export class Case {
   @Prop({ type: [String], default: [] })
   categories: string[]; // ≤3
 
-  // ⬇ industry як enum
   @Prop({ type: String, enum: INDUSTRY_ENUM, index: true })
-  industry?: (typeof INDUSTRY_ENUM)[number]; // 1
+  industry?: (typeof INDUSTRY_ENUM)[number];
 
   @Prop({ type: [String], default: [] })
   tags: string[]; // ≤20
 
-  // ⬇ що було зроблено (масив enum-значень)
   @Prop({ type: [String], enum: WHAT_DONE_ENUM, default: [] })
   whatWasDone?: (typeof WHAT_DONE_ENUM)[number][];
 
-  // обкладинка (гнучкий формат: url + sizes як довільний об’єкт)
+  // обкладинка (url + sizes)
   @Prop({ type: Object, default: null })
   cover?: {
     url: string;
@@ -81,8 +79,6 @@ export class Case {
     status: VideoStatus;
     playbackUrl?: string;
     thumbnailUrl?: string;
-
-    // службові поля завантаження
     originalName?: string;
     size?: number;
     mimetype?: string;
@@ -148,22 +144,16 @@ export class Case {
   @Prop({ type: [String], default: [] })
   palette!: string[];
 
-  // --- Блоковий контент кейсу ---
+  // --- Блоковий контент кейса ---
   @Prop({
     type: [
       {
         kind: { type: String, enum: ['text', 'iframe', 'media'], required: true },
-
-        // text блок
         text: { type: String }, // markdown/html
-
-        // iframe блок (YouTube/Vimeo)
         iframe: {
           url: { type: String },
           provider: { type: String, enum: ['youtube', 'vimeo'] },
         },
-
-        // media блок (масив елементів)
         media: [
           {
             type: { type: String, enum: ['image', 'video'], required: true },

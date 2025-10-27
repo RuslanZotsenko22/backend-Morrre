@@ -22,15 +22,18 @@ import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-// ⬇ Лишаємо тільки відео-малтер
+
 import { uploadVideoMulter } from '../media/upload.util';
 import { MediaService } from '../media/cloudinary.service';
 import { VideoQueue } from '../queue/video.queue';
 
 import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
 
-
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+
+
+import { LifeScoreService } from './life-score.service';
+
 
 @ApiTags('cases') 
 @Controller('cases') 
@@ -39,9 +42,10 @@ export class CasesController {
     private readonly cases: CasesService,
     private readonly media: MediaService,
     private readonly videoQueue: VideoQueue,
+    private readonly lifeScore: LifeScoreService,
+    
   ) {}
 
-  // ===== Статичні маршрути (перед :id) =====
   @Get('popular-slides')
   async getPopularSlides() {
     return this.cases.getPopularSlides();
@@ -56,14 +60,12 @@ export class CasesController {
     return this.cases.discoverCases({ category, limit: n });
   }
 
-  // ===== CRUD =====
   @UseGuards(JwtAuthGuard)
   @Post()
   create(@Req() req, @Body() dto: CreateCaseDto) {
     return this.cases.create(req.user.userId, dto);
   }
 
-  // Звужуємо :id до валідного ObjectId, щоб не ловити статичні шляхи
   @Get(':id')
   findOne(@Param('id', new ParseObjectIdPipe()) id: string) {
     return this.cases.findPublicById(id);
@@ -75,7 +77,6 @@ export class CasesController {
     return this.cases.updateOwned(req.user.userId, id, dto);
   }
 
- 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @ApiOperation({ summary: 'Видалити кейс (локальні файли + Vimeo)' })
@@ -83,7 +84,6 @@ export class CasesController {
     return this.cases.deleteCase(req.user.userId, id);
   }
 
-  // ===== Cover: файл АБО JSON url =====
   @UseGuards(JwtAuthGuard)
   @Post(':id/cover')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
@@ -111,7 +111,7 @@ export class CasesController {
       );
     }
 
-    const sizes = await this.media.uploadImageVariants(file); // { low, mid, full }
+    const sizes = await this.media.uploadImageVariants(file); 
     return this.cases.setCover(userId, id, {
       type: 'image',
       url: sizes.full,
@@ -119,7 +119,6 @@ export class CasesController {
     } as any);
   }
 
-  // ===== Video: зберігаємо на диск, кидаємо у BullMQ =====
   @UseGuards(JwtAuthGuard)
   @Post(':id/videos')
   @UseInterceptors(FileInterceptor('file', uploadVideoMulter))
@@ -177,31 +176,58 @@ export class CasesController {
   
   /** ---------------- UNIQUE VIEWS ---------------- */
 
-  /**
-   * POST /api/cases/:id/view
-   * Body: { userId?: string, anonToken?: string }
-   * Повертає { unique: boolean, uniqueViews?: number }
-   */
   @Post(':id/view')
   async markView(
     @Param('id') id: string,
     @Body() body: { userId?: string; anonToken?: string },
   ) {
-    return this.cases.markUniqueView(id, {
+    
+    const res = await this.cases.markUniqueView(id, {
       userId: body?.userId,
       anonToken: body?.anonToken,
-    })
+    });
+
+    
+    await this.lifeScore.onView(id, {
+      actorId: body?.userId,
+      fingerprint: body?.anonToken,
+    });
+    
+
+    return res;
   }
+
+  @UseGuards(JwtAuthGuard)
+@Post(':id/save')
+async markSave(@Param('id') id: string, @Req() req) {
+  const userId = req.user?.userId;
+  await this.lifeScore.onSave(id, { actorId: userId });
+  return { ok: true };
+}
+
+@Post(':id/share')
+async markShare(@Param('id') id: string, @Req() req) {
+  const actorId = req.user?.userId; 
+  await this.lifeScore.onShare(id, { actorId });
+  return { ok: true };
+}
+
+@UseGuards(JwtAuthGuard)
+@Post(':id/ref-like')
+async markRefLike(@Param('id') id: string, @Req() req) {
+  const userId = req.user?.userId;
+  await this.lifeScore.onRefLike(id, { actorId: userId });
+  return { ok: true };
+}
+
 
   /** ---------------- CASE PAGE ---------------- */
 
-  /** GET /api/cases/:id/similar */
   @Get(':id/similar')
   async similar(@Param('id') id: string, @Query('industry') industry?: string) {
     return { items: await this.cases.getSimilarCases(id, industry) }
   }
 
-  
   @Get(':id/more-from-author')
   @ApiOperation({ summary: 'Більше кейсів від автора (fallback: популярні за місяць у тій же індустрії)' })
   @ApiQuery({ name: 'limit', required: false, description: 'К-сть елементів, за замовчуванням 6 (макс. 12)' })
@@ -213,9 +239,6 @@ export class CasesController {
     return this.cases.moreFromAuthor(id, limitNum);
   }
 
-  /** GET /api/cases/:idOrSlug
-   *  Опційно ?userId=... — тоді повертаємо myVote + ctaState
-   */
   @Get(':idOrSlug')
   async getCase(
     @Param('idOrSlug') idOrSlug: string,
@@ -224,7 +247,7 @@ export class CasesController {
     if (userId) {
       return await this.cases.getCasePageForUser(idOrSlug, userId);
     }
-    // беквард-сумісно: якщо userId не передали — повертаємо базовий кешований варіант
+    
     return await this.cases.getCasePage(idOrSlug);
   }
 
@@ -234,5 +257,4 @@ export class CasesController {
     const currentUserId = req?.user?.userId || req?.user?._id || req?.user?.id || null
     return this.cases.authorsForCase(id, currentUserId)
   }
-
 }

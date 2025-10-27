@@ -12,12 +12,21 @@ export class HomeService {
   private readonly keyLanding = 'home:landing:v1'; // збільш версію при зміні формату відповіді
   private readonly logger = new Logger(HomeService.name);
 
+  // кеш-ключі для списків
+  private readonly keyPopular = (page: number, limit: number) =>
+    `home:popular:v1:p${page}:l${limit}`;
+  private readonly keyCollections = (featuredOnly: boolean, page: number, limit: number) =>
+    `home:collections:v1:f${featuredOnly ? 1 : 0}:p${page}:l${limit}`;
+  private readonly keyDiscover = (category: string | undefined, page: number, limit: number) =>
+    `home:discover:v1:c${category ?? 'all'}:p${page}:l${limit}`;
+
   constructor(
     private readonly cache: RedisCacheService,
     private readonly collections: CollectionsService,
     private readonly cases: CasesService,
     @InjectModel(PopularQueue.name) private readonly pqModel: Model<PopularQueueDocument>,
     @InjectModel('Case') private readonly caseModel: Model<any>,
+    @InjectModel('Collection') private readonly collectionModel: Model<any>, // Модель колекцій (назва має збігатися з твоєю реєстрацією в MongooseModule.forFeature)
   ) {}
 
   /** Публічні дані для головної */
@@ -47,6 +56,101 @@ export class HomeService {
   async invalidateLandingCache() {
     await this.cache.del(this.keyLanding);
     return { ok: true };
+  }
+
+  // ===============================
+  // NEW: Discover список (для /home/discover)
+  // ===============================
+
+  /**
+   * GET /home/discover — список кейсів зі статусом published,
+   * опційний фільтр за категорією, пагінація.
+   */
+  async getDiscover({
+    category,
+    limit,
+    page,
+  }: {
+    category?: string;
+    limit: number;
+    page: number;
+  }) {
+    const key = this.keyDiscover(category, page, limit);
+    const hit = await this.cache.get<any>(key);
+    if (hit) return hit;
+
+    const skip = (page - 1) * limit;
+    const filter: any = { status: 'published' };
+    if (category) filter.categories = { $in: [category] };
+
+    const [items, total] = await Promise.all([
+      this.caseModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      this.caseModel.countDocuments(filter),
+    ]);
+
+    const data = { items, page, limit, total };
+    await this.cache.set(key, data, this.ttlMs);
+    return data;
+  }
+
+  // ===============================
+  // NEW: Popular / Collections списки (для /home/popular і /home/collections)
+  // ===============================
+
+  /** GET /home/popular — активні кейси популярного розділу (пагінація) */
+  async getPopular({ limit, page }: { limit: number; page: number }) {
+    const key = this.keyPopular(page, limit);
+    const hit = await this.cache.get<any>(key);
+    if (hit) return hit;
+
+    const skip = (page - 1) * limit;
+
+    // Показуємо лише опубліковані в Popular
+    const filter: any = { popularActive: true };
+
+    // Сортування батчів: спершу найсвіжіший день, далі час публікації в межах дня
+    const sort = { popularBatchDate: -1, popularPublishedAt: -1, _id: -1 } as const;
+
+    const [items, total] = await Promise.all([
+      this.caseModel.find(filter).sort(sort).skip(skip).limit(limit).lean(),
+      this.caseModel.countDocuments(filter),
+    ]);
+
+    const data = { items, page, limit, total };
+    await this.cache.set(key, data, this.ttlMs);
+    return data;
+  }
+
+  /** GET /home/collections — колекції (featuredOnly=true за замовчуванням) з пагінацією */
+  async getCollections({
+    featuredOnly,
+    limit,
+    page,
+  }: {
+    featuredOnly: boolean;
+    limit: number;
+    page: number;
+  }) {
+    const key = this.keyCollections(featuredOnly, page, limit);
+    const hit = await this.cache.get<any>(key);
+    if (hit) return hit;
+
+    const skip = (page - 1) * limit;
+
+    const filter: any = {};
+    if (featuredOnly) filter.featured = true;
+
+    // Якщо є поле order — воно перше; інакше fallback на createdAt
+    const sort = { order: 1, createdAt: -1 } as const;
+
+    const [items, total] = await Promise.all([
+      this.collectionModel.find(filter).sort(sort).skip(skip).limit(limit).lean(),
+      this.collectionModel.countDocuments(filter),
+    ]);
+
+    const data = { items, page, limit, total };
+    await this.cache.set(key, data, this.ttlMs);
+    return data;
   }
 
   // ===============================
@@ -86,6 +190,13 @@ export class HomeService {
     });
 
     await this.invalidateLandingCache();
+    // опційно: інвалідовувати списки popular/collections (якщо є метод delByPattern)
+    try {
+      await (this.cache as any).delByPattern?.('home:popular:v1:*');
+      await (this.cache as any).delByPattern?.('home:collections:v1:*');
+      await (this.cache as any).delByPattern?.('home:discover:v1:*');
+    } catch {}
+
     return created;
   }
 
@@ -145,6 +256,11 @@ export class HomeService {
 
     await item.save();
     await this.invalidateLandingCache();
+    try {
+      await (this.cache as any).delByPattern?.('home:popular:v1:*');
+      await (this.cache as any).delByPattern?.('home:collections:v1:*');
+      await (this.cache as any).delByPattern?.('home:discover:v1:*');
+    } catch {}
     return item;
   }
 
@@ -189,6 +305,11 @@ export class HomeService {
     }
 
     await this.invalidateLandingCache();
+    try {
+      await (this.cache as any).delByPattern?.('home:popular:v1:*');
+      await (this.cache as any).delByPattern?.('home:collections:v1:*');
+      await (this.cache as any).delByPattern?.('home:discover:v1:*');
+    } catch {}
     return { ok: true };
   }
 
@@ -253,6 +374,11 @@ export class HomeService {
     }
 
     await this.invalidateLandingCache();
+    try {
+      await (this.cache as any).delByPattern?.('home:popular:v1:*');
+      await (this.cache as any).delByPattern?.('home:collections:v1:*');
+      await (this.cache as any).delByPattern?.('home:discover:v1:*');
+    } catch {}
 
     this.logger.log(`publishDailyBatch: published ${batch.length} case(s)`);
     return {

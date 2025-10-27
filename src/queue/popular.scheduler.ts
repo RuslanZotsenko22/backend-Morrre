@@ -12,24 +12,15 @@ export class PopularScheduler implements OnModuleInit {
   constructor(@Inject(QUEUE_TOKENS.POPULAR_QUEUE) private readonly queue: Queue) {}
 
   async onModuleInit() {
-    await this.queue.add(
-      'daily-publish',
-      {},
-      {
-        repeat: { pattern: '0 9 * * *' }, // 09:00 щодня
-        removeOnComplete: true,
-        jobId: 'popular:daily-publish',
-      },
-    );
-
-    await this.queue.add(
-      'hourly-decay',
-      {},
-      {
-        repeat: { pattern: '0 * * * *' }, // кожну годину на 00 хв
-        removeOnComplete: true,
-        jobId: 'popular:hourly-decay',
-      },
-    );
+    await this.queue.add('daily-publish', {}, {
+  repeat: { pattern: '0 9 * * *', tz: 'Europe/Prague' },
+  removeOnComplete: true,
+  jobId: 'popular:daily-publish',
+});
+await this.queue.add('hourly-decay', {}, {
+  repeat: { pattern: '0 * * * *', tz: 'Europe/Prague' },
+  removeOnComplete: true,
+  jobId: 'popular:hourly-decay',
+});
   }
 }
