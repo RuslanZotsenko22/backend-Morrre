@@ -4,7 +4,7 @@ import { User, UserDocument } from './schemas/user.schema';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 
-// ⬇⬇⬇ ДОДАНО: локальний медіа-сервіс (опційно)
+
 import { MediaService } from '../media/media.service';
 
 @Injectable()
@@ -12,7 +12,6 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
 
-    // ⬇⬇⬇ ДОДАНО: опційні адаптери для завантаження файлів
     @Optional() private readonly media?: MediaService,
     @Optional() private readonly cloudinary?: { upload: (file: Express.Multer.File, opts?: any) => Promise<any> },
   ) {}

@@ -24,7 +24,7 @@ import { UpdateCaseDto } from './dto/update-case.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 // ⬇ Лишаємо тільки відео-малтер
 import { uploadVideoMulter } from '../media/upload.util';
-import { MediaService } from '../media/media.service';
+import { MediaService } from '../media/cloudinary.service';
 import { VideoQueue } from '../queue/video.queue';
 
 import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
