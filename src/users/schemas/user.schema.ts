@@ -1,26 +1,25 @@
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema } from 'mongoose';
 
 export type UserDocument = HydratedDocument<User>;
 export type UserRole = 'user' | 'admin' | 'jury' | 'pro';
+export type UserAuthProvider = 'password' | 'google';
 
 @Schema({ timestamps: true })
 export class User {
   @Prop({ required: true, trim: true })
   name: string;
 
+  // email у тебе вже required+unique+lowercase — це правильно
   @Prop({ unique: true, required: true, lowercase: true, trim: true })
   email: string;
 
   @Prop({ select: false })
   passwordHash: string;
 
-  
   @Prop({ trim: true, unique: true, sparse: true })
   username?: string;
 
-  
   @Prop({ lowercase: true, index: true, unique: true, sparse: true })
   usernameLower?: string;
 
@@ -33,7 +32,6 @@ export class User {
   @Prop({ default: '' })
   location?: string;
 
-  
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
   socials?:
     | {
@@ -46,7 +44,6 @@ export class User {
       }
     | string[];
 
-  
   @Prop({ type: [String], default: [] })
   industries?: string[];
 
@@ -59,20 +56,30 @@ export class User {
   @Prop({ default: 0 })
   totalUserScore: number;
 
- 
   @Prop({ default: true })
   isActive?: boolean;
+
+  // ========  GOOGLE OAUTH ========
+
+  // індекс/унікальність створюються через @Prop — дубль через schema.index прибрали
+  @Prop({ type: String, index: true, unique: true, sparse: true })
+  googleId?: string;
+
+  @Prop({ type: Boolean, default: false })
+  emailVerified?: boolean;
+
+  @Prop({ type: [String], default: [] })
+  providers?: UserAuthProvider[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+// Базові індекси
+UserSchema.index({ name: 1 });
+UserSchema.index({ role: 1 });
+UserSchema.index({ totalUserScore: -1 });
 
-UserSchema.index({ name: 1 });             // пошук/фільтр за іменем
-UserSchema.index({ role: 1 });             // швидка фільтрація за роллю (в т.ч. 'pro')
-UserSchema.index({ totalUserScore: -1 });  // сортування/ранжування користувачів
-
-
-
+// --- hooks ---
 UserSchema.pre('save', function (next) {
   // @ts-ignore
   if (this.isModified('username')) {
@@ -81,42 +88,56 @@ UserSchema.pre('save', function (next) {
     // @ts-ignore
     this.usernameLower = u ? String(u).trim().toLowerCase() : undefined;
   }
+
+  // гарантійна нормалізація email (хоч і є lowercase у @Prop)
+  // @ts-ignore
+  if (this.isModified('email') && typeof this.email === 'string') {
+    // @ts-ignore
+    this.email = this.email.trim().toLowerCase();
+  }
+
   next();
 });
-
 
 UserSchema.pre('findOneAndUpdate', function (next) {
   const update: any = this.getUpdate() || {};
   const $set = update.$set ?? {};
   const $unset = update.$unset ?? {};
 
-  
+  // нормалізація usernameLower
   const nextUsername =
     (Object.prototype.hasOwnProperty.call(update, 'username') ? update.username : undefined) ??
     (Object.prototype.hasOwnProperty.call($set, 'username') ? $set.username : undefined);
 
-  
   if ($unset && ($unset.username || $unset['username'])) {
     update.$unset = { ...$unset, usernameLower: 1 };
     this.setUpdate(update);
     return next();
   }
 
-  
   if (typeof nextUsername !== 'undefined') {
     const normalized = nextUsername ? String(nextUsername).trim().toLowerCase() : undefined;
 
-    
     if (!update.$set) update.$set = {};
     update.$set.usernameLower = normalized;
 
     if (!nextUsername) {
-      
       delete update.$set.username;
       delete update.$set.usernameLower;
       update.$unset = { ...(update.$unset || {}), username: 1, usernameLower: 1 };
     }
+    this.setUpdate(update);
+  }
 
+  // нормалізація email при оновленні
+  const nextEmail =
+    (Object.prototype.hasOwnProperty.call(update, 'email') ? update.email : undefined) ??
+    (Object.prototype.hasOwnProperty.call($set, 'email') ? $set.email : undefined);
+
+  if (typeof nextEmail !== 'undefined') {
+    const normalizedEmail = nextEmail ? String(nextEmail).trim().toLowerCase() : nextEmail;
+    if (!update.$set) update.$set = {};
+    update.$set.email = normalizedEmail;
     this.setUpdate(update);
   }
 

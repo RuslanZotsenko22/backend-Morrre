@@ -1,9 +1,8 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { User, UserDocument } from './schemas/user.schema';
-import { Model } from 'mongoose';
+import { Model, FilterQuery } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
-
 
 import { MediaService } from '../media/media.service';
 
@@ -11,7 +10,6 @@ import { MediaService } from '../media/media.service';
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-
     @Optional() private readonly media?: MediaService,
     @Optional() private readonly cloudinary?: { upload: (file: Express.Multer.File, opts?: any) => Promise<any> },
   ) {}
@@ -196,5 +194,33 @@ export class UsersService {
     );
 
     return { ok: true };
+  }
+
+  // ---------- THIN HELPERS for OAuth (НЕ ламають існуючу логіку) ----------
+
+  /**
+   * Тонка обгортка над моделлю. Повертає "сирий" документ (НЕ publicUser),
+   * щоб сервіси авторизації могли оновити його та зберегти.
+   */
+  async findOne(filter: FilterQuery<UserDocument>) {
+    return this.userModel.findOne(filter).exec();
+  }
+
+  /**
+   * Оновлює документ за id. Повертає оновлений "сирий" документ.
+   * Використовується для акуратного лінкування googleId / avatar / name тощо.
+   */
+  async updateById(id: string, patch: Partial<User>) {
+    return this.userModel.findByIdAndUpdate(id, patch, { new: true }).exec();
+  }
+
+  /**
+   * Створює нового користувача з OAuth-джерела.
+   * Повертає "сирий" документ, щоб авторизація могла одразу видати токени.
+   */
+  async createFromOAuth(data: Partial<User>) {
+    // не чіпаємо normalizeUsernamePair тут, бо username може бути відсутній
+    const doc = new this.userModel(data);
+    return doc.save();
   }
 }
