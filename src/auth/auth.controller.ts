@@ -9,7 +9,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-  import { RegisterDto } from './dto/register.dto';
+import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
@@ -50,7 +50,7 @@ export class AuthController {
     return this.auth.login(dto.email, dto.password);
   }
 
-  // ГІБРИД: читаємо refreshToken з cookie або з body (зворотно сумісно)
+  // ГІБРИД: refresh з cookie або з body (для зворотної сумісності)
   @Post('refresh')
   refresh(@Req() req: any, @Body() body: { refreshToken?: string }) {
     const rt = req?.cookies?.refreshToken || body?.refreshToken;
@@ -60,7 +60,6 @@ export class AuthController {
 
   @Post('logout')
   logout(@Res() res: Response) {
-    // Стираємо refresh-куку; якщо ти робиш whitelist/rotate — тут же можеш її деактивувати
     res.clearCookie('refreshToken', {
       httpOnly: true,
       sameSite: 'lax',
@@ -100,7 +99,7 @@ export class AuthController {
     };
   }
 
-  // ========= GOOGLE OAUTH: Redirect flow =========
+  // ========= GOOGLE OAUTH: Redirect (popup-friendly) =========
 
   @Get('google')
   @UseGuards(GoogleAuthGuard)
@@ -114,7 +113,7 @@ export class AuthController {
     try {
       const data = await this.auth.loginWithGoogle(req.user as any);
 
-      // СТАВИМО refresh у HttpOnly cookie
+      // refresh у HttpOnly cookie
       res.cookie('refreshToken', data.refreshToken, {
         httpOnly: true,
         sameSite: 'lax',
@@ -122,16 +121,42 @@ export class AuthController {
         maxAge: 1000 * 60 * 60 * 24 * 7, // 7 днів
       });
 
-      // accessToken у фрагмент (або взагалі без нього — тоді фронт зробить /auth/refresh або /auth/me)
-      const successUrl = process.env.OAUTH_SUCCESS_REDIRECT || 'http://localhost:3001/auth/success';
-      const url = new URL(successUrl);
-      const fragment = new URLSearchParams({
-        accessToken: data.accessToken,
-      }).toString();
+      const accessToken = data.accessToken;
 
-      return res.redirect(`${url.toString()}#${fragment}`);
+      // HTML-сторінка, що відправляє токен у popup (повністю без змін логіки фронта)
+      const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Авторизація успішна</title>
+</head>
+<body>
+<script>
+(function () {
+  try {
+    if (window.opener && !window.opener.closed) {
+      // ✅ фронт очікує саме такий формат
+      window.opener.postMessage(${JSON.stringify(accessToken)}, '*');
+      window.close();
+      return;
+    }
+  } catch (e) {
+    // no-op
+  }
+  // fallback, якщо відкрито напряму
+  window.location.replace(${JSON.stringify(
+    process.env.OAUTH_SUCCESS_REDIRECT || 'http://localhost:3001/auth/success'
+  )});
+})();
+</script>
+</body>
+</html>`;
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
     } catch {
-      const failureUrl = process.env.OAUTH_FAILURE_REDIRECT || 'http://localhost:3001/auth/failure';
+      const failureUrl =
+        process.env.OAUTH_FAILURE_REDIRECT || 'http://localhost:3001/auth/failure';
       return res.redirect(failureUrl);
     }
   }
@@ -166,7 +191,6 @@ export class AuthController {
       maxAge: 1000 * 60 * 60 * 24 * 7,
     });
 
-    // access + user у JSON
     return res.json({ user: data.user, accessToken: data.accessToken });
   }
 }
