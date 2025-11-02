@@ -14,15 +14,19 @@ export class CreateHireRequestDto {
   @IsOptional()
   @IsString()
   @MaxLength(120)
-  budget?: string
+  budget?: string | number
 
   @IsOptional()
   @IsString()
   @MaxLength(4000)
   description?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  timeline?: string
 }
 
-// helper: фільтруємо тільки дозволені категорії
 export function sanitizeCategories(input: unknown): string[] {
   const arr = Array.isArray(input) ? input : []
   const out: string[] = []

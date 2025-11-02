@@ -59,7 +59,7 @@ export class MediaService {
       return { url: secureUrl, secure_url: secureUrl };
     }
 
-    // Локальний фолбек
+    
     const baseDir = path.resolve(process.cwd(), 'uploads');
     const dir = path.join(baseDir, folder);
     await fsp.mkdir(dir, { recursive: true });
