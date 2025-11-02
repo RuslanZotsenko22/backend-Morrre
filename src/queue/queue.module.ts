@@ -14,7 +14,7 @@ import { Case, CaseSchema } from '../cases/schemas/case.schema';
 import { MediaModule } from '../media/media.module'; 
 import { VimeoWorkerService } from './vimeo-worker.service';
 
-//  модель драфтів, бо VimeoWorkerService її інжектить
+
 import { CaseDraft, CaseDraftSchema } from '../cases/schemas/case-draft.schema';
 
 @Module({
@@ -22,10 +22,10 @@ import { CaseDraft, CaseDraftSchema } from '../cases/schemas/case-draft.schema';
     VimeoModule,
     forwardRef(() => CasesModule),
 
-    //  MediaModule, щоб VimeoApi був доступний у цьому модулі
+    
     MediaModule,
 
-    // Щоб PopularProcessor і VimeoWorkerService могли інжектити моделі:
+    
     MongooseModule.forFeature([
       { name: Case.name, schema: CaseSchema },
       { name: CaseDraft.name, schema: CaseDraftSchema }, 

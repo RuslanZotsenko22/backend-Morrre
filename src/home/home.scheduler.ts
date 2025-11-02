@@ -48,7 +48,7 @@ export class PopularScheduler {
   })
   async dailyPublishFallback() {
     if (String(process.env.POPULAR_FALLBACK_ENABLED || '').toLowerCase() !== 'true') {
-      // вимкнено — тихо виходимо
+      
       return;
     }
 

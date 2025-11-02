@@ -50,7 +50,7 @@ export class AuthController {
     return this.auth.login(dto.email, dto.password);
   }
 
-  // ГІБРИД: refresh з cookie або з body (для зворотної сумісності)
+  // ГІБРИД: refresh з cookie або з body 
   @Post('refresh')
   refresh(@Req() req: any, @Body() body: { refreshToken?: string }) {
     const rt = req?.cookies?.refreshToken || body?.refreshToken;
@@ -123,7 +123,7 @@ export class AuthController {
 
       const accessToken = data.accessToken;
 
-      // HTML-сторінка, що відправляє токен у popup (повністю без змін логіки фронта)
+      // HTML-сторінка, що відправляє токен у popup 
       const html = `<!doctype html>
 <html>
 <head>
@@ -135,7 +135,7 @@ export class AuthController {
 (function () {
   try {
     if (window.opener && !window.opener.closed) {
-      // ✅ фронт очікує саме такий формат
+      
       window.opener.postMessage(${JSON.stringify(accessToken)}, '*');
       window.close();
       return;

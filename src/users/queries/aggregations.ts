@@ -1,4 +1,4 @@
-// src/users/queries/aggregations.ts
+
 import { PipelineStage, Types } from 'mongoose';
 import { Model } from 'mongoose';
 import { UserProfile } from '../schemas/user-profile.schema';
@@ -12,11 +12,7 @@ export interface CasesQueryOpts {
   offset: number;
 }
 
-/**
- * Пайплайн категорій користувача
- * - збирає всі категорії з опублікованих кейсів, де користувач є автором або контриб’ютором
- * - рахує кількість появ
- */
+
 export function buildUserCategoriesPipeline(userId: Types.ObjectId): PipelineStage[] {
   return [
     {
@@ -43,16 +39,7 @@ export function buildUserCategoriesPipeline(userId: Types.ObjectId): PipelineSta
   ];
 }
 
-/**
- * Формує фільтр і початкове сортування для списку кейсів користувача.
- * - Фільтр: isPublished=true AND (authorId=user OR contributors contains user)
- * - Додатково: фільтр по categories (IN)
- * - Сортування:
- *    - date:     publishedAt desc
- *    - popular:  score desc, views desc, publishedAt desc
- *    - author:   publishedAt desc (далі в сервісі виконується авторський порядок)
- * Повертає ще й caseOrder з профілю (для author-сорту).
- */
+
 export async function buildUserCasesQuery(
   profileModel: Model<UserProfile>,
   userId: Types.ObjectId,
@@ -70,12 +57,11 @@ export async function buildUserCasesQuery(
   let sort: Record<string, 1 | -1>;
   switch (opts.sort) {
     case 'popular':
-      // популярне — за балами (score), далі views, потім дата
+      
       sort = { score: -1, views: -1, publishedAt: -1 };
       break;
     case 'author':
-      // первинно тягнемо за датою (новіші спочатку), а далі сервіс розкладає:
-      // нові (не в caseOrder) — догори; решта — за ручним порядком
+      
       sort = { publishedAt: -1 };
       break;
     case 'date':

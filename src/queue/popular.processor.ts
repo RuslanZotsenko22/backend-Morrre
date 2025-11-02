@@ -39,10 +39,10 @@ export class PopularProcessor implements OnModuleInit {
     const force = await this.caseModel
       .find({
         status: 'published',
-        popularQueued: true,          // ← було curatedQueued
+        popularQueued: true,         
         forceToday: true,
       })
-      .sort({ queuedAt: 1 })         // ← було curatedAddedAt
+      .sort({ queuedAt: 1 })         
       .limit(DAILY_COUNT)
       .lean();
 
@@ -54,10 +54,10 @@ export class PopularProcessor implements OnModuleInit {
         ? await this.caseModel
             .find({
               status: 'published',
-              popularQueued: true,    // ← було curatedQueued
+              popularQueued: true,    
               forceToday: { $ne: true },
             })
-            .sort({ queuedAt: 1 })   // ← було curatedAddedAt
+            .sort({ queuedAt: 1 })   
             .limit(remain)
             .lean()
         : [];
@@ -69,10 +69,10 @@ export class PopularProcessor implements OnModuleInit {
     }
 
     const now = new Date();
-    // batchDate — початок доби (локальний; якщо хочеш UTC-нуль — зсунь до 00:00 UTC)
+    
     const batchDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // 3) Активуємо у Popular, знімаємо з черги, ініціалізуємо життя
+    
     const ops = batch.map((doc) =>
       this.caseModel.updateOne(
         { _id: doc._id },
@@ -84,7 +84,7 @@ export class PopularProcessor implements OnModuleInit {
             popularPublishedAt: now,
             popularBatchDate: batchDate,
             lifeScore: INITIAL_LIFE,
-            popularStatus: 'published', // для швидких фільтрів
+            popularStatus: 'published', 
           },
         },
         { runValidators: true },

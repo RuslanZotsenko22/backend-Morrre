@@ -12,7 +12,7 @@ import { CollectionsModule } from '../collections/collections.module';
 
 import { HomeService } from './home.service';
 
-// ⬇ схеми для curated-черги та кейсів
+
 import { PopularQueue, PopularQueueSchema } from './schemas/popular-queue.schema';
 import { CaseSchema } from '../cases/schemas/case.schema';
 
@@ -23,7 +23,7 @@ import { CaseSchema } from '../cases/schemas/case.schema';
     ConfigModule,
     ScheduleModule.forRoot(),
 
-    // ⬇ підключення моделей Mongo для цього модуля
+    
     MongooseModule.forFeature([
       { name: PopularQueue.name, schema: PopularQueueSchema },
       { name: 'Case', schema: CaseSchema },
@@ -31,9 +31,9 @@ import { CaseSchema } from '../cases/schemas/case.schema';
   ],
   controllers: [HomeController, InternalHomeController],
   providers: [
-    PopularScheduler, // планувальник щоденної публікації (коли додамо job)
+    PopularScheduler, 
     RedisCacheService,
-    HomeService,      // ⬅ додано сервіс з логікою curated-черги
+    HomeService,      
   ],
   exports: [HomeService],
 })

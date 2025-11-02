@@ -73,8 +73,7 @@ export class UserPageService {
   const limit = Math.max(1, Math.min(50, Number.isFinite(opts.limit) ? opts.limit : 12));
   const offset = Math.max(0, Number.isFinite(opts.offset) ? opts.offset : 0);
 
-  // 🔎 якщо фронт надіслав categories — відсічемо опечатки:
-  // візьмемо лише ті, що реально є у користувача (за агрегацією)
+  
   let safeCategories = opts.categories;
   if (opts.categories && opts.categories.length > 0) {
     const catsAgg = await this.caseModel.aggregate(
@@ -83,7 +82,7 @@ export class UserPageService {
     const userCats = new Set(catsAgg.map(c => String(c.name).toLowerCase()));
     safeCategories = opts.categories.filter(c => userCats.has(String(c).toLowerCase()));
     if (safeCategories.length === 0) {
-      // якщо жодної валідної — одразу повертаємо порожньо без зайвих запитів
+      
       return { items: [], total: 0 };
     }
   }

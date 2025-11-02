@@ -6,7 +6,7 @@ import { InteractionDto } from './dto/interaction.dto';
 export class CasesInteractionsController {
   constructor(private readonly cases: CasesService) {}
 
-  /** POST /api/cases/:id/interaction  { type: 'view'|'save'|'share'|'refLike', refId?, actor? } */
+  
   @Post(':id/interaction')
   async register(
     @Param('id') caseId: string,

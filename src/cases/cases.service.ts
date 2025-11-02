@@ -1816,7 +1816,7 @@ async moreFromAuthor(caseId: string, limit = 6) {
         cover: 1,
         industry: 1,
         createdAt: 1,
-        // ⚠️ якщо uniqueViews у тебе об'єкт { unique: N } — заміни рядок нижче на '$uniqueViews.unique'
+        
         score: { $ifNull: ['$uniqueViews', '$views'] },
       },
     },

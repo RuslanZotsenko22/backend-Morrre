@@ -34,7 +34,7 @@ export class UpdateCollectionDto {
   @IsString()
   description?: string
 
-  @IsOptional() // дозволяємо null, щоб очистити cover
+  @IsOptional() 
   cover?: CoverDto | null
 
   @IsOptional()

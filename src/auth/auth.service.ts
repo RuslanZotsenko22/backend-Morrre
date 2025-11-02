@@ -34,7 +34,7 @@ export class AuthService {
       throw new BadRequestException('Email already registered');
     }
 
-    const code = this.generateOtp(); // 6 цифр
+    const code = this.generateOtp(); 
     const codeHash = await bcrypt.hash(code, 10);
 
     const otpKey = this.otpKey(email);
@@ -308,13 +308,12 @@ export class AuthService {
   }) {
     const email = p.email ? p.email.trim().toLowerCase() : null;
 
-    // 1) шукаємо користувача по googleId
     let user =
       typeof (this.users as any).findOne === 'function'
         ? await (this.users as any).findOne({ googleId: p.googleId })
         : await (this.users as any)['userModel']?.findOne?.({ googleId: p.googleId }).exec?.();
 
-    // 2) якщо не знайдено — шукаємо по email і лінкуємо
+    
     if (!user && email) {
       const byEmail = await this.users.findByEmail(email);
       if (byEmail) {
@@ -337,7 +336,7 @@ export class AuthService {
       }
     }
 
-    // 3) якщо все ще нема — створюємо нового
+    
     if (!user) {
       if (!email) throw new BadRequestException('Google did not return email');
       const payload: any = {

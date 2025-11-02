@@ -69,8 +69,6 @@ CasesInteractionsController,
     RedisCacheService,
     PaletteService,
     
-
-    
     CaseDraftsService,
     DraftsJanitorService,
     LifeScoreService

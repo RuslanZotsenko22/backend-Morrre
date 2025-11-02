@@ -5,7 +5,7 @@ import { createReadStream, statSync } from 'fs';
 import { basename, extname } from 'path';
 
 type CreateVideoResp = {
-  uri: string; // "/videos/{id}"
+  uri: string; 
   upload?: { upload_link?: string };
 };
 
@@ -48,12 +48,9 @@ export class VimeoService {
     });
   }
 
-  /**
-   * Знаходимо або створюємо папку (проект) на Vimeo для caseId.
-   * Повертаємо projectId (останній сегмент з URI).
-   */
+  
   async ensureFolder(caseId: string): Promise<string> {
-    // 1) пошук за назвою
+    
     try {
       const { data } = await this.api.get<ProjectListResp>('/me/projects', {
         params: { query: caseId, per_page: 50 },
@@ -67,29 +64,24 @@ export class VimeoService {
       this.logger.warn(`Vimeo list projects failed: ${e?.message}`);
     }
 
-    // 2) створення
+    
     const created = await this.api.post<{ uri: string }>('/me/projects', { name: caseId });
-    const projectUri = created.data?.uri; // "/users/{uid}/projects/{pid}"
+    const projectUri = created.data?.uri; 
     const folderId = projectUri?.split('/').pop();
     if (!folderId) throw new Error('Vimeo folderId not returned');
     return folderId;
   }
 
-  /**
-   * Реальний аплоад:
-   * 1) POST /me/videos з approach: "post" -> отримаємо upload_link
-   * 2) PUT файл на upload_link
-   * 3) Додамо відео у проект (папку)
-   */
+  
   async uploadVideo(filePath: string, folderId: string): Promise<{ vimeoId: string }> {
     const fileSize = statSync(filePath).size;
     const filename = basename(filePath);
 
-    // 1) створити відео і отримати upload_link
+    
     const createResp = await this.api.post<CreateVideoResp>('/me/videos', {
       upload: { approach: 'post', size: fileSize },
       name: filename,
-      privacy: { view: 'unlisted' }, // або "anybody" / як тобі потрібно
+      privacy: { view: 'unlisted' }, 
     });
 
     const videoUri = createResp.data?.uri;
@@ -98,15 +90,14 @@ export class VimeoService {
       throw new Error('Vimeo did not return video URI or upload_link');
     }
 
-    // 2) PUT файл на видаданий одноразовий upload_link
+    
     await axios.put(uploadUrl, createReadStream(filePath), {
       headers: { 'Content-Type': guessVideoContentType(filePath) },
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
-      timeout: 0, // великі файли можуть вантажитись довго
+      timeout: 0, 
     });
 
-    // 3) додати відео у проект/папку
     const videoId = videoUri.split('/').pop()!;
     await this.api.put(`/me/projects/${folderId}/videos/${videoId}`);
 
@@ -114,9 +105,7 @@ export class VimeoService {
     return { vimeoId: videoId };
   }
 
-  /**
-   * Отримати мета-дані відео (playback + thumbnail)
-   */
+  
   async getVideoMeta(vimeoId: string): Promise<{ playbackUrl?: string; thumbnailUrl?: string }> {
     const { data } = await this.api.get<ClipMetaResp>(`/videos/${vimeoId}`, {
       params: { fields: 'link,files,pictures.sizes' },
@@ -134,7 +123,7 @@ export class VimeoService {
     return { playbackUrl, thumbnailUrl };
   }
 
-  // залишаємо аліас, якщо десь у коді ще є старе імʼя
+  
   async uploadToVimeo(filePath: string, folderId: string) {
     return this.uploadVideo(filePath, folderId);
   }

@@ -8,11 +8,11 @@ import { PopularQueue, PopularQueueDocument } from './schemas/popular-queue.sche
 
 @Injectable()
 export class HomeService {
-  private readonly ttlMs = 180_000; // 3 хв
-  private readonly keyLanding = 'home:landing:v1'; // збільш версію при зміні формату відповіді
+  private readonly ttlMs = 180_000; 
+  private readonly keyLanding = 'home:landing:v1'; 
   private readonly logger = new Logger(HomeService.name);
 
-  // кеш-ключі для списків
+  
   private readonly keyPopular = (page: number, limit: number) =>
     `home:popular:v1:p${page}:l${limit}`;
   private readonly keyCollections = (featuredOnly: boolean, page: number, limit: number) =>
@@ -26,7 +26,7 @@ export class HomeService {
     private readonly cases: CasesService,
     @InjectModel(PopularQueue.name) private readonly pqModel: Model<PopularQueueDocument>,
     @InjectModel('Case') private readonly caseModel: Model<any>,
-    @InjectModel('Collection') private readonly collectionModel: Model<any>, // Модель колекцій (назва має збігатися з твоєю реєстрацією в MongooseModule.forFeature)
+    @InjectModel('Collection') private readonly collectionModel: Model<any>, 
   ) {}
 
   /** Публічні дані для головної */
@@ -58,14 +58,7 @@ export class HomeService {
     return { ok: true };
   }
 
-  // ===============================
-  // NEW: Discover список (для /home/discover)
-  // ===============================
-
-  /**
-   * GET /home/discover — список кейсів зі статусом published,
-   * опційний фільтр за категорією, пагінація.
-   */
+ 
   async getDiscover({
     category,
     limit,
@@ -94,7 +87,7 @@ export class HomeService {
   }
 
   // ===============================
-  // NEW: Popular / Collections списки (для /home/popular і /home/collections)
+  // Collections списки (для /home/popular і /home/collections)
   // ===============================
 
   /** GET /home/popular — активні кейси популярного розділу (пагінація) */
@@ -140,7 +133,7 @@ export class HomeService {
     const filter: any = {};
     if (featuredOnly) filter.featured = true;
 
-    // Якщо є поле order — воно перше; інакше fallback на createdAt
+   
     const sort = { order: 1, createdAt: -1 } as const;
 
     const [items, total] = await Promise.all([
@@ -190,7 +183,7 @@ export class HomeService {
     });
 
     await this.invalidateLandingCache();
-    // опційно: інвалідовувати списки popular/collections (якщо є метод delByPattern)
+    
     try {
       await (this.cache as any).delByPattern?.('home:popular:v1:*');
       await (this.cache as any).delByPattern?.('home:collections:v1:*');
@@ -314,12 +307,10 @@ export class HomeService {
   }
 
   // ===============================
-  // NEW: Daily batch (preview + publish)
+  //  Daily batch (preview + publish)
   // ===============================
 
-  /**
-   * Попередній перегляд — які айтеми підуть у найближчу публікацію (forceToday попереду, далі FIFO).
-   */
+  
   async previewDailyBatch(limit = 8) {
     const items = await this.pqModel
       .find({ status: 'queued' })
@@ -331,10 +322,7 @@ export class HomeService {
     return items;
   }
 
-  /**
-   * Публікація перших N айтемів (forceToday first → FIFO).
-   * Ідемпотентно: оновлює тільки ті, що мають status='queued'.
-   */
+  
   async publishDailyBatch(limit = 8) {
     const batch = await this.pqModel
       .find({ status: 'queued' })
@@ -347,10 +335,10 @@ export class HomeService {
     }
 
     const pubAt = new Date();
-    const batchDate = new Date(pubAt.toISOString().slice(0, 10)); // північ UTC
+    const batchDate = new Date(pubAt.toISOString().slice(0, 10)); 
 
     for (const item of batch) {
-      // підстрахуємось на випадок гонки
+      
       if (item.status !== 'queued') continue;
 
       item.status = 'published';

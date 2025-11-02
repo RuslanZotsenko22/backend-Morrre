@@ -3,7 +3,7 @@ import { HydratedDocument, Types } from 'mongoose';
 
 @Schema({ collection: 'user_stats', timestamps: true })
 export class UserStats {
-  // існуючі поля
+  
   @Prop({ type: Types.ObjectId, ref: 'User', unique: true, index: true })
   userId!: Types.ObjectId;
 
@@ -14,7 +14,7 @@ export class UserStats {
   @Prop() lastRecountAt?: Date;
   @Prop({ default: 0 }) rating!: number;
 
-  // нові поля для рейтингу
+  
   @Prop({ default: 0 }) totalScore!: number;      // загальний рейтинг
   @Prop({ default: 0 }) weeklyScore!: number;     // тижневий рейтинг
   @Prop({ default: 0 }) caseCount!: number;       // кількість кейсів

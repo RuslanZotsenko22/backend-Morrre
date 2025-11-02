@@ -21,7 +21,7 @@ export class Collection {
     alt?: string
   }
 
-  // порядок важливий:
+  
   @Prop({ type: [mongoose.Schema.Types.ObjectId], ref: 'Case', default: [] })
   cases!: string[]
 

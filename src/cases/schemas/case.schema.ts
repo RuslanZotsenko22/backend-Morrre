@@ -72,7 +72,6 @@ export class Case {
     >;
   };
 
-  // відео-мета
   @Prop({ type: [Object], default: [] })
   videos?: {
     vimeoId?: string;

@@ -74,13 +74,13 @@ export class VimeoWorkerService implements OnModuleInit {
   }
 
   private async markBlockStatus(caseId: string, sectionIndex: number, blockIndex: number, patch: any) {
-  // Спочатку пробуємо Draft
+ 
   const draftRes = await this.draftModel.updateOne(
     { _id: caseId } as any,
     { $set: Object.fromEntries(Object.entries(patch).map(([k,v]) => [`sections.${sectionIndex}.blocks.${blockIndex}.${k}`, v])) } as any,
   )
   if (draftRes.modifiedCount === 0) {
-    // Якщо Draft не оновився — пробуємо Case (вже опубліковано)
+    
     await this.caseModel.updateOne(
       { _id: caseId } as any,
       { $set: Object.fromEntries(Object.entries(patch).map(([k,v]) => [`content.${sectionIndex}.blocks.${blockIndex}.${k}`, v])) } as any,
