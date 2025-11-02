@@ -18,6 +18,7 @@ import { FollowsModule } from './users/follows.module'
 import { UserPageModule } from './users/user-page.module';
 import { UserStatsHooksModule } from './users/stats/user-stats.hooks.module';
 import { SearchModule } from './search/search.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { SearchModule } from './search/search.module';
 UserPageModule,
 UserStatsHooksModule,
 SearchModule,
+ChatModule,
   ],
 })
 export class AppModule {}
