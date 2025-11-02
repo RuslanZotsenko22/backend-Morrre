@@ -2,11 +2,7 @@ import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { QUEUE_TOKENS } from './bullmq.provider';
 
-/**
- * Реєструє repeatable jobs:
- * - daily-publish: щодня о 09:00
- * - hourly-decay: щогодини на "00"
- */
+
 @Injectable()
 export class PopularScheduler implements OnModuleInit {
   constructor(@Inject(QUEUE_TOKENS.POPULAR_QUEUE) private readonly queue: Queue) {}

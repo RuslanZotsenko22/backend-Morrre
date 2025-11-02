@@ -67,7 +67,7 @@ export class DraftMetaDto {
 
   @IsString()
   @MaxLength(64)
-  industry!: string // перевірка на енуми у сервісі при потребі
+  industry!: string 
 
   @IsArray()
   @ArrayMaxSize(3)

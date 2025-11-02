@@ -73,7 +73,7 @@ class DraftCover {
       mid: { type: String },
       full: { type: String },
     },
-    default: undefined, // важливо: не null
+    default: undefined, 
   })
   sizes?: { low?: string; mid?: string; full?: string }
 }
@@ -116,7 +116,7 @@ export class CaseDraft {
   contributors!: Array<{ userId: string; title?: string }>
 
   /** Обкладинка (фото або відео) */
-  @Prop({ type: DraftCoverSchema, default: undefined }) // важливо: підсхема + undefined
+  @Prop({ type: DraftCoverSchema, default: undefined }) 
   cover?: DraftCover
 
   /** Vimeo folder id (для цього кейса/чернетки) */

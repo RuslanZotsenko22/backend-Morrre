@@ -154,7 +154,7 @@ function parseSignature(header: string): { hash: string; timestamp?: number } {
     return { hash, timestamp }
   }
 
-  // sha256=...
+ 
   const m = s.match(/^sha256=(.+)$/i)
   if (m) return { hash: m[1].toLowerCase() }
 

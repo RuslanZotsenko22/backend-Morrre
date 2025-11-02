@@ -84,7 +84,7 @@ export class CaseDraftsService {
       })),
     }
 
-    // ущільнення (уникнути sparse)
+    
     const compact = sections.map((s) => s || null).filter(Boolean)
     if (compact.length > 100) throw new BadRequestException('Too many sections (>100)')
 
@@ -118,7 +118,7 @@ export class CaseDraftsService {
     return { ok: true }
   }
 
-  /** Завантажене зображення в Draft: повернемо url */
+  
   async attachImageToBlock(
     ownerId: string,
     draftId: string,
@@ -144,7 +144,7 @@ export class CaseDraftsService {
     return { ok: true, url: b.mediaUrl }
   }
 
-  /** Пуш відео у Vimeo через чергу */
+  
   async attachVideoToBlock(
     ownerId: string,
     draftId: string,
@@ -202,12 +202,12 @@ export class CaseDraftsService {
         await fsp.rename(from, to)
       }
     } catch (e) {
-      // не зриваємо публікацію — залогуємо
+      
       console.error('moveDraftFolderToCase error', e)
     }
   }
 
-  /** Публікація → створюємо Case і видаляємо Draft + переносимо мету/контент/файли */
+  
   async publish(ownerId: string, draftId: string) {
     const draft = await this.get(ownerId, draftId)
     if (!draft.title?.trim()) throw new BadRequestException('Title required')
@@ -220,7 +220,7 @@ export class CaseDraftsService {
       categories: draft.categories || [],
       tags: draft.tags || [],
       contributors: draft.contributors || [],
-      content: [], // оновимо після переносу
+      content: [], 
       cover: draft.cover || null,
     })
 
@@ -233,7 +233,7 @@ export class CaseDraftsService {
     return { ok: true, caseId: caseDoc._id.toString() }
   }
 
-  /** Видалення фінального кейса з файлами та Vimeo */
+  
   async deleteCase(ownerId: string, caseId: string) {
     this.assertId(ownerId, 'ownerId')
     this.assertId(caseId, 'caseId')
@@ -241,13 +241,13 @@ export class CaseDraftsService {
     const doc = await this.caseModel.findOne({ _id: caseId, ownerId })
     if (!doc) throw new NotFoundException('Case not found')
 
-    // 1) локальні файли
+   
     const dir = path.resolve(process.cwd(), 'uploads', 'cases', caseId)
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true })
     }
 
-    // 2) Vimeo: у чергу — видалити папку/відео
+    
     await this.videoQueue.enqueueCleanup({ caseId })
 
     await this.caseModel.deleteOne({ _id: caseId })
@@ -256,18 +256,15 @@ export class CaseDraftsService {
 
 
 
-/** Хелпер: витягнути Vimeo ID з будь-якого vimeo URL */
+
 private extractVimeoId(url?: string) {
   if (!url) return null
-  // підтримує player.vimeo.com/video/123, vimeo.com/123, ...?param=...
+  
   const m = String(url).match(/vimeo\.com\/(?:video\/)?(\d+)/i)
   return m ? m[1] : null
 }
 
-/**
- * Точкове оновлення одного блоку (зміна типу, полів, стилю).
- * Якщо було відео Vimeo і замінюємо на зображення/інший тип — ставимо job на видалення відео.
- */
+
 async updateBlock(
   ownerId: string,
   draftId: string,
@@ -283,7 +280,7 @@ async updateBlock(
 
   const prev = { ...b }
 
-  // Оновлюємо поля за DTO
+  
   if (dto.kind) b.kind = dto.kind
   if (typeof dto.textMd === 'string') b.textMd = dto.textMd
 
@@ -293,13 +290,13 @@ async updateBlock(
   if (dto.mediaType) b.mediaType = dto.mediaType
   if (typeof dto.mediaUrl === 'string') b.mediaUrl = dto.mediaUrl
 
-  // Стиль
+  
   b.style = {
     borderRadius: dto.borderRadius ?? b.style?.borderRadius ?? 0,
     gap: dto.gap ?? b.style?.gap ?? 0,
   }
 
-  // Якщо було Vimeo-відео, а стало не-відео → пробуємо видалити конкретне відео у Vimeo
+  
   const wasVimeo =
     prev.mediaType === 'video' &&
     typeof prev.mediaUrl === 'string' &&
@@ -310,7 +307,7 @@ async updateBlock(
   if (wasVimeo && !nowVideo) {
     const vimeoId = this.extractVimeoId(prev.mediaUrl)
     if (vimeoId) {
-      // точкове видалення відео (не всю папку)
+      
       await this.videoQueue.enqueueDeleteVideo({ caseId: draftId, vimeoId })
     }
   }
@@ -323,7 +320,7 @@ async updateBlock(
   return { ok: true }
 }
 
-/** Видалити медіа із блоку (очистити mediaType/mediaUrl). Якщо відео Vimeo — ставимо job на видалення. */
+
 async removeBlockMedia(ownerId: string, draftId: string, sectionIndex: number, blockIndex: number) {
   const draft = await this.get(ownerId, draftId)
   const s = draft.sections?.[sectionIndex]
@@ -331,16 +328,12 @@ async removeBlockMedia(ownerId: string, draftId: string, sectionIndex: number, b
   const b = s.blocks?.[blockIndex]
   if (!b) throw new (await import('@nestjs/common')).BadRequestException('Block not found')
 
-  // якщо було Vimeo — видалимо відео
   if (b.mediaType === 'video' && typeof b.mediaUrl === 'string' && /vimeo\.com/i.test(b.mediaUrl)) {
     const vimeoId = this.extractVimeoId(b.mediaUrl)
     if (vimeoId) await this.videoQueue.enqueueDeleteVideo({ caseId: draftId, vimeoId })
   }
 
-  // якщо було локальне зображення — нічого не робимо (опціонально: видалити файл з диску)
-  // const localPath = b.mediaType === 'image' ? b.mediaUrl : null
-
-  // чистимо медіа-поля, але залишаємо kind='media' (або переведи у 'text' за бажанням)
+ 
   b.mediaType = undefined
   b.mediaUrl = undefined
   b.kind = 'media'

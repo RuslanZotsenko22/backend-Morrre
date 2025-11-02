@@ -21,10 +21,10 @@ import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
-    // робимо конфіг глобальним, щоб .env підхоплювався всюди
+    
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // Mongoose через async-варіант, інжектимо ConfigService
+    
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({

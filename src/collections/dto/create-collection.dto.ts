@@ -39,7 +39,7 @@ export class CreateCollectionDto {
   @IsOptional()
   @IsArray()
   @ArrayUnique()
-  @IsString({ each: true }) // ObjectId як string
+  @IsString({ each: true }) 
   cases?: string[]
 
   @IsOptional()

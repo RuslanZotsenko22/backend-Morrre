@@ -16,7 +16,7 @@ export class DraftsJanitorService implements OnModuleInit, OnModuleDestroy {
     @InjectModel(Case.name) private caseModel: Model<any>,
   ) {}
 
-  /** Базова директорія для кейсів (env або uploads/cases) */
+ 
   private getBaseDir() {
     return process.env.CASE_UPLOAD_DIR
       ? path.resolve(process.cwd(), process.env.CASE_UPLOAD_DIR)
@@ -30,17 +30,17 @@ export class DraftsJanitorService implements OnModuleInit, OnModuleDestroy {
     const entries = fs.readdirSync(base, { withFileTypes: true })
     const dirs = entries.filter((d) => d.isDirectory()).map((d) => d.name)
 
-    // службові папки, які ігноруємо
+   
     const skip = new Set(['covers', '.gitkeep'])
 
-    // забираємо тільки об’єкт-айді подібні папки
+    
     const candidateIds = dirs
       .filter((d) => !skip.has(d))
       .filter((d) => /^[a-f0-9]{24}$/i.test(d) && isValidObjectId(d))
 
     if (candidateIds.length === 0) return
 
-    // витягуємо існуючі id з БД
+    
     const [draftIds, caseIds] = await Promise.all([
       this.draftModel.distinct('_id'),
       this.caseModel.distinct('_id'),

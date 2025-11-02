@@ -10,7 +10,7 @@ import { RedisCacheService } from '../common/redis/redis-cache.service'
 
 @Module({
   imports: [
-    ConfigModule, // на випадок, якщо не глобальний
+    ConfigModule, 
     MongooseModule.forFeature([
       { name: Collection.name, schema: CollectionSchema },
       { name: Case.name, schema: CaseSchema },

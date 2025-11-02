@@ -23,7 +23,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule)
   const config = app.get(ConfigService)
 
-  // Якщо є реверс-проксі (Nginx/Cloudflare/Render/Heroku) — для secure cookies
+  
   if (process.env.NODE_ENV === 'production') {
     // @ts-ignore
     app.set('trust proxy', 1)

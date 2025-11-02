@@ -70,7 +70,7 @@ export class InternalController {
     return { ok: true, lifeScore: res.lifeScore };
   }
 
-  /** ===== НОВЕ: admin endpoints для Popular/Slides ===== */
+  /** =====  admin endpoints для Popular/Slides ===== */
 
   /** Тогл для featuredSlides (слайди на головній) */
   @Post('cases/feature-slide')

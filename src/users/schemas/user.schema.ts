@@ -10,7 +10,7 @@ export class User {
   @Prop({ required: true, trim: true })
   name: string;
 
-  // email у тебе вже required+unique+lowercase — це правильно
+  
   @Prop({ unique: true, required: true, lowercase: true, trim: true })
   email: string;
 
@@ -61,7 +61,7 @@ export class User {
 
   // ========  GOOGLE OAUTH ========
 
-  // індекс/унікальність створюються через @Prop — дубль через schema.index прибрали
+  
   @Prop({ type: String, index: true, unique: true, sparse: true })
   googleId?: string;
 
@@ -89,7 +89,6 @@ UserSchema.pre('save', function (next) {
     this.usernameLower = u ? String(u).trim().toLowerCase() : undefined;
   }
 
-  // гарантійна нормалізація email (хоч і є lowercase у @Prop)
   // @ts-ignore
   if (this.isModified('email') && typeof this.email === 'string') {
     // @ts-ignore
@@ -129,7 +128,7 @@ UserSchema.pre('findOneAndUpdate', function (next) {
     this.setUpdate(update);
   }
 
-  // нормалізація email при оновленні
+  
   const nextEmail =
     (Object.prototype.hasOwnProperty.call(update, 'email') ? update.email : undefined) ??
     (Object.prototype.hasOwnProperty.call($set, 'email') ? $set.email : undefined);

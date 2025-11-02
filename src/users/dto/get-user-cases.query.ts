@@ -13,7 +13,7 @@ export class GetUserCasesQueryDto {
     const cleaned = arr
       .map((s) => String(s).trim())
       .filter(Boolean)
-      .map((s) => s.slice(0, 48).toLowerCase()); // нормалізуємо і ріжемо надто довгі
+      .map((s) => s.slice(0, 48).toLowerCase()); 
     // унікальні значення
     return Array.from(new Set(cleaned)).slice(0, 20);
   })
