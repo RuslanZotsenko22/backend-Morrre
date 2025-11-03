@@ -41,28 +41,17 @@ export class ChatService {
   { $match: match },
   // opponent info
   {
-    $addFields: {
-      opponentId: {
-        $let: {
-          vars: { p: '$participants' },
-          in: {
-            $arrayElemAt: [
-              {
-                $filter: {
-                  input: '$$p',
-                  as: 'x',
-                  cond: { $ne: ['$$x', uid] },
-                },
-              },
-              0,
-            ],
-          },
-        },
-      },
+  $addFields: {
+    opponentId: {
+      $arrayElemAt: [
+        { $setDifference: ['$participants', [uid]] },
+        0,
+      ],
     },
   },
-  { $lookup: { from: 'users', localField: 'opponentId', foreignField: '_id', as: 'opponent' } },
-  { $unwind: '$opponent' },
+},
+{ $lookup: { from: 'users', localField: 'opponentId', foreignField: '_id', as: 'opponent' } },
+{ $unwind: { path: '$opponent', preserveNullAndEmptyArrays: true } },
 
   
   {
@@ -134,7 +123,7 @@ export class ChatService {
         text: '$lastMessage.text',
         createdAt: '$lastMessage.createdAt',
         isEdited: '$lastMessage.edited.isEdited',
-        isDeleted: { $in: [uid, '$lastMessage.deletedFor'] },
+       isDeleted: { $in: [uid, { $ifNull: ['$lastMessage.deletedFor', []] }] },
       },
     },
   },
