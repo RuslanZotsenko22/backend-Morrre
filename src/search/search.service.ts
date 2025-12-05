@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { SearchQueryDto } from './dto/search.query.dto';
+import { BotProfileService } from '../botnet/services/bot-profile.service';
 
 // твої сутності
 import { User } from '../users/schemas/user.schema';
@@ -30,12 +31,28 @@ type CaseHit = {
   score: number;
 };
 
+type BotHit = {
+  _id: Types.ObjectId;
+  username: string;
+  email: string;
+  avatar: string;
+  isBot: boolean;
+  botData: {
+    canVote: boolean;
+    hasAvatar: boolean;
+    status: 'active' | 'inactive' | 'suspended';
+    activityCount: number;
+  };
+  score: number;
+};
+
 @Injectable()
 export class SearchService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(UserProfile.name) private readonly profileModel: Model<UserProfile>,
     @InjectModel(Case.name) private readonly caseModel: Model<Case>,
+    private readonly botProfileService: BotProfileService, // Додаємо сервіс ботів
   ) {}
 
   private buildRegexes(q: string) {
@@ -243,6 +260,48 @@ export class SearchService {
     return scored.slice(0, limit);
   }
 
+  // ===== BOTS =====
+  private async searchBots(q: string, limit: number): Promise<BotHit[]> {
+    try {
+      const result = await this.botProfileService.searchBots({
+        username: q,
+        limit: limit * 3, // Більше результатів для подальшого сортування
+      });
+
+      const rx = this.buildRegexes(q);
+
+      const scored: BotHit[] = result.bots.map((bot) => {
+        const baseScore =
+          this.scoreString(bot.username, rx, 1.5) +
+          this.scoreString(bot.email, rx, 1.1);
+
+        // Додаткові бонуси за активність
+        const activityBonus = Math.min(bot.botData.activityCount / 10, 20);
+        const statusBonus = bot.botData.status === 'active' ? 15 : 0;
+        const canVoteBonus = bot.botData.canVote ? 10 : 0;
+        const hasAvatarBonus = bot.botData.hasAvatar ? 5 : 0;
+
+        const totalScore = baseScore + activityBonus + statusBonus + canVoteBonus + hasAvatarBonus;
+
+        return {
+          _id: new Types.ObjectId(bot.id),
+          username: bot.username,
+          email: bot.email,
+          avatar: bot.avatar,
+          isBot: true,
+          botData: bot.botData,
+          score: totalScore,
+        };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      return scored.slice(0, limit);
+    } catch (error) {
+      console.error('Error searching bots:', error);
+      return [];
+    }
+  }
+
   // ===== PUBLIC API =====
   async search(params: SearchQueryDto) {
     const q = (params.q || '').trim();
@@ -250,30 +309,43 @@ export class SearchService {
     const type = params.type ?? 'all';
 
     if (!q) {
-      return { q, users: [], cases: [], background: null };
+      return { q, users: [], cases: [], bots: [], background: null };
     }
 
     const wantUsers = type === 'all' || type === 'users';
     const wantCases = type === 'all' || type === 'cases';
+    // Виправлення: використовуємо приведення типів, оскільки SearchQueryDto може не містити 'bots'
+    const wantBots = type === 'all' || (type as string) === 'bots';
 
-    const [users, cases] = await Promise.all([
+    const [users, cases, bots] = await Promise.all([
       wantUsers ? this.searchUsers(q, limit) : Promise.resolve([] as UserHit[]),
       wantCases ? this.searchCases(q, limit) : Promise.resolve([] as CaseHit[]),
+      wantBots ? this.searchBots(q, limit) : Promise.resolve([] as BotHit[]),
     ]);
 
     // вибір фону за релевантністю
     const topUser = users[0];
     const topCase = cases[0];
-    let background: { kind: 'user' | 'case'; url: string | null } | null = null;
-    if (topUser && topCase) {
-      background =
-        topCase.score >= topUser.score
-          ? { kind: 'case', url: topCase.coverUrl ?? null }
-          : { kind: 'user', url: topUser.avatarUrl ?? null };
-    } else if (topCase) {
-      background = { kind: 'case', url: topCase.coverUrl ?? null };
-    } else if (topUser) {
-      background = { kind: 'user', url: topUser.avatarUrl ?? null };
+    const topBot = bots[0];
+    
+    let background: { kind: 'user' | 'case' | 'bot'; url: string | null } | null = null;
+    
+    // Знаходимо найрелевантніший результат
+    const allTopResults = [
+      { type: 'user', score: topUser?.score || 0, url: topUser?.avatarUrl || null },
+      { type: 'case', score: topCase?.score || 0, url: topCase?.coverUrl || null },
+      { type: 'bot', score: topBot?.score || 0, url: topBot?.avatar || null },
+    ];
+
+    const topResult = allTopResults.reduce((prev, current) => 
+      (prev.score > current.score) ? prev : current
+    );
+
+    if (topResult.score > 0) {
+      background = {
+        kind: topResult.type as 'user' | 'case' | 'bot',
+        url: topResult.url,
+      };
     }
 
     return {
@@ -297,7 +369,41 @@ export class SearchService {
         coverUrl: c.coverUrl ?? null,
         _score: Math.round(c.score),
       })),
+      bots: bots.map((b) => ({
+        id: String(b._id),
+        username: b.username,
+        email: b.email,
+        avatar: b.avatar,
+        isBot: true,
+        botData: b.botData,
+        _score: Math.round(b.score),
+      })),
       background,
+    };
+  }
+
+  // Новий метод для пошуку тільки ботів
+  async searchOnlyBots(params: SearchQueryDto) {
+    const q = (params.q || '').trim();
+    const limit = params.limit ?? 10;
+
+    if (!q) {
+      return { q, bots: [] };
+    }
+
+    const bots = await this.searchBots(q, limit);
+
+    return {
+      q,
+      bots: bots.map((b) => ({
+        id: String(b._id),
+        username: b.username,
+        email: b.email,
+        avatar: b.avatar,
+        isBot: true,
+        botData: b.botData,
+        _score: Math.round(b.score),
+      })),
     };
   }
 }

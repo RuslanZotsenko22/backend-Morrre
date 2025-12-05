@@ -31,9 +31,8 @@ import { ParseObjectIdPipe } from '../common/pipes/objectid.pipe';
 
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
-
 import { LifeScoreService } from './life-score.service';
-
+import { CasePublishHook } from '../botnet/hooks/case-publish.hook';
 
 @ApiTags('cases') 
 @Controller('cases') 
@@ -43,8 +42,53 @@ export class CasesController {
     private readonly media: MediaService,
     private readonly videoQueue: VideoQueue,
     private readonly lifeScore: LifeScoreService,
-    
+    private casePublishHook: CasePublishHook,
   ) {}
+
+  
+  @UseGuards(JwtAuthGuard)
+  @Post()
+  @ApiOperation({ summary: 'Створити новий кейс (з автоматичним запуском ботнету)' })
+  async create(@Req() req, @Body() dto: CreateCaseDto) {
+    const caseData = await this.cases.create(req.user.userId, dto);
+    
+    
+    try {
+      
+      const caseId = String(caseData._id || caseData.id);
+      await this.casePublishHook.onCasePublished(caseId);
+    } catch (error) {
+      // Не зупиняємо створення кейсу через помилку ботнету
+      console.error('Botnet hook failed:', error.message);
+    }
+    
+    return caseData;
+  }
+
+  
+  @Post(':id/boost')
+  @ApiOperation({ summary: 'Запустити ботнет-активність для кейсу' })
+  async boostCase(@Param('id', new ParseObjectIdPipe()) id: string) {
+    const boostResult = await this.casePublishHook.onCaseBoost(id);
+    
+    return {
+      caseId: id,
+      ...boostResult
+    };
+  }
+
+ 
+  @Post(':id/simulate-publish')
+  @ApiOperation({ summary: 'Симулювати публікацію для тестування ботнету' })
+  async simulateCasePublish(@Param('id', new ParseObjectIdPipe()) id: string) {
+    const publishResult = await this.casePublishHook.onCasePublished(id);
+    
+    return {
+      caseId: id,
+      simulatedMessage: `Case publish simulated for ${id}`, 
+      ...publishResult
+    };
+  }
 
   @Get('popular-slides')
   async getPopularSlides() {
@@ -58,12 +102,6 @@ export class CasesController {
   ) {
     const n = Math.max(1, Math.min(100, Number(limit) || 12));
     return this.cases.discoverCases({ category, limit: n });
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post()
-  create(@Req() req, @Body() dto: CreateCaseDto) {
-    return this.cases.create(req.user.userId, dto);
   }
 
   @Get(':id')
@@ -198,27 +236,27 @@ export class CasesController {
   }
 
   @UseGuards(JwtAuthGuard)
-@Post(':id/save')
-async markSave(@Param('id') id: string, @Req() req) {
-  const userId = req.user?.userId;
-  await this.lifeScore.onSave(id, { actorId: userId });
-  return { ok: true };
-}
+  @Post(':id/save')
+  async markSave(@Param('id') id: string, @Req() req) {
+    const userId = req.user?.userId;
+    await this.lifeScore.onSave(id, { actorId: userId });
+    return { ok: true };
+  }
 
-@Post(':id/share')
-async markShare(@Param('id') id: string, @Req() req) {
-  const actorId = req.user?.userId; 
-  await this.lifeScore.onShare(id, { actorId });
-  return { ok: true };
-}
+  @Post(':id/share')
+  async markShare(@Param('id') id: string, @Req() req) {
+    const actorId = req.user?.userId; 
+    await this.lifeScore.onShare(id, { actorId });
+    return { ok: true };
+  }
 
-@UseGuards(JwtAuthGuard)
-@Post(':id/ref-like')
-async markRefLike(@Param('id') id: string, @Req() req) {
-  const userId = req.user?.userId;
-  await this.lifeScore.onRefLike(id, { actorId: userId });
-  return { ok: true };
-}
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/ref-like')
+  async markRefLike(@Param('id') id: string, @Req() req) {
+    const userId = req.user?.userId;
+    await this.lifeScore.onRefLike(id, { actorId: userId });
+    return { ok: true };
+  }
 
 
   /** ---------------- CASE PAGE ---------------- */

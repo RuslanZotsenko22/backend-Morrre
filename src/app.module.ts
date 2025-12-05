@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
-
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CasesModule } from './cases/cases.module';
@@ -19,6 +18,12 @@ import { UserPageModule } from './users/user-page.module';
 import { UserStatsHooksModule } from './users/stats/user-stats.hooks.module';
 import { SearchModule } from './search/search.module';
 import { ChatModule } from './chat/chat.module';
+import { BotnetModule } from './botnet/botnet.module';
+import { CommentsModule } from './comments/comments.module';
+import { LikesModule } from './likes/likes.module';
+import { FollowsModule1 } from './follows/follows.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ReferralModule } from './referral/referral.module';
 
 @Module({
   imports: [
@@ -50,6 +55,12 @@ UserPageModule,
 UserStatsHooksModule,
 SearchModule,
 ChatModule,
+BotnetModule,
+CommentsModule,
+LikesModule,
+FollowsModule1,
+NotificationsModule,
+ReferralModule,
   ],
 })
 export class AppModule {}

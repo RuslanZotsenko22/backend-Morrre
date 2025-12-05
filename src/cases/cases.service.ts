@@ -28,6 +28,7 @@ import { USER_STATS_QUEUE } from '../users/stats/user-stats.queue';
 import { PopularQueue, PopularQueueDocument } from '../home/schemas/popular-queue.schema';
 import { InteractionDto } from './dto/interaction.dto';
 
+
 type CaseStatus = 'draft' | 'published'
 
 /** Обкладинка кейса (з підтримкою різних розмірів) */
@@ -69,6 +70,11 @@ type NewVideoMeta = {
   [k: string]: unknown
 }
 
+interface LayoutSettings {
+  blockSpacing?: number  // відстань між блоками (px)
+  borderRadius?: number  // скруглення (px)
+}
+
 interface CreateCaseDto {
   title: string
   description?: string
@@ -76,6 +82,9 @@ interface CreateCaseDto {
   tags?: string[]
   categories?: string[]
   industry?: string
+  whatWasDone?: string[]          // вже використовується в sanitizeCreateDto
+  coverFormat?: 'horizontal' | 'vertical' | 'square'
+  layoutSettings?: LayoutSettings // налаштування відступів і скруглення
 }
 
 interface UpdateCaseDto {
@@ -85,6 +94,9 @@ interface UpdateCaseDto {
   tags?: string[]
   categories?: string[]
   industry?: string
+  whatWasDone?: string[]          // вже використовується в sanitizeUpdateDto
+  coverFormat?: 'horizontal' | 'vertical' | 'square'
+  layoutSettings?: LayoutSettings // налаштування відступів і скруглення
   // cover/videos оновлюються окремими методами
 }
 
@@ -186,19 +198,32 @@ function sanitizeUpdateDto(patch: UpdateCaseDto): UpdateCaseDto {
     allowed.categories = normalizeStringArray(patch.categories, 3)
   }
 
-  
   if ((patch as any).whatWasDone !== undefined) {
     (allowed as any).whatWasDone = Array.isArray((patch as any).whatWasDone)
       ? (patch as any).whatWasDone.filter((v: any) => WHAT_DONE_ENUM.includes(v)).slice(0, 12)
       : []
   }
 
-  
   if (patch.industry !== undefined) {
     allowed.industry = INDUSTRY_ENUM.includes(patch.industry as any)
       ? (patch.industry as any)
       : undefined
   }
+
+  // ✅ дозволяємо оновлення формату обкладинки
+  if (patch.coverFormat !== undefined) {
+    const allowedFormats: Array<'horizontal' | 'vertical' | 'square'> = [
+      'horizontal',
+      'vertical',
+      'square',
+    ]
+    if (!allowedFormats.includes(patch.coverFormat as any)) {
+      throw new BadRequestException('coverFormat must be one of: horizontal, vertical, square')
+    }
+    allowed.coverFormat = patch.coverFormat as any
+  }
+
+  // ⚠ layoutSettings тут не чіпаємо — ним займемося окремо в updateOwned
 
   return allowed
 }
@@ -222,6 +247,7 @@ constructor(
   private readonly palette:      PaletteService,
 
   
+
   @InjectModel(PopularQueue.name) private readonly pqModel: Model<PopularQueueDocument>,
 
   @Optional() private readonly videoQueue?: VideoQueue,
@@ -403,8 +429,31 @@ async authorsForCase(caseId: string, currentUserId?: string | null) {
 
   async create(ownerId: string, dto: CreateCaseDto) {
     if (!ownerId) throw new ForbiddenException('ownerId required')
+
     const clean = sanitizeCreateDto(dto)
-    const doc = await this.caseModel.create({ ...clean, ownerId })
+
+    // мапимо layoutSettings → style (radius + gap)
+    const style =
+      dto.layoutSettings
+        ? {
+            ...(typeof dto.layoutSettings.borderRadius === 'number'
+              ? { radius: dto.layoutSettings.borderRadius }
+              : {}),
+            ...(typeof dto.layoutSettings.blockSpacing === 'number'
+              ? { gap: dto.layoutSettings.blockSpacing }
+              : {}),
+          }
+        : undefined
+
+    const doc = await this.caseModel.create({
+      ...clean,
+      ownerId,
+      // формат обкладинки (horizontal / vertical / square)
+      ...(dto.coverFormat ? { coverFormat: dto.coverFormat } : {}),
+      // якщо хоч щось задано — пишемо style
+      ...(style && Object.keys(style).length > 0 ? { style } : {}),
+    })
+
     await this.invalidateAll()
     return doc
   }
@@ -423,7 +472,7 @@ async authorsForCase(caseId: string, currentUserId?: string | null) {
     return doc
   }
 
-  async updateOwned(userId: string, id: string, patch: UpdateCaseDto) {
+ async updateOwned(userId: string, id: string, patch: UpdateCaseDto) {
     ensureObjectId(id)
     const doc = await this.caseModel.findById(id)
     if (!doc) throw new NotFoundException('Case not found')
@@ -433,9 +482,25 @@ async authorsForCase(caseId: string, currentUserId?: string | null) {
       throw new ForbiddenException('Not owner')
     }
 
-    // «білий список» полів
+    // «білий список» полів (title, description, status, tags, categories, industry, coverFormat, whatWasDone)
     const allowed = sanitizeUpdateDto(patch)
     Object.assign(doc, allowed)
+
+    //  layoutSettings → style (partial update)
+    const layout = (patch as any).layoutSettings
+    if (layout && typeof layout === 'object') {
+      const currentStyle: any = doc.style || {}
+
+      if (typeof layout.borderRadius === 'number') {
+        currentStyle.radius = layout.borderRadius
+      }
+      if (typeof layout.blockSpacing === 'number') {
+        currentStyle.gap = layout.blockSpacing
+      }
+
+      doc.style = currentStyle
+    }
+
     await doc.save() // викликає валідації схеми
 
     await this.invalidateAll()

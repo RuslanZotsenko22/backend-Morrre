@@ -8,6 +8,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { Case, CaseSchema } from '../cases/schemas/case.schema';
 // профіль користувача для displayName / avatar
 import { UserProfile, UserProfileSchema } from '../users/schemas/user-profile.schema';
+import { BotnetModule } from '../botnet/botnet.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UserProfile, UserProfileSchema } from '../users/schemas/user-profile.sc
       { name: UserProfile.name,  schema: UserProfileSchema },
       { name: Case.name,         schema: CaseSchema },
     ]),
+     BotnetModule,
   ],
   controllers: [SearchController],
   providers: [SearchService],

@@ -4,7 +4,7 @@ import { Vote, VoteSchema } from './schemas/vote.schema'
 import { VotesService } from './votes.service'
 import { VotesController } from './votes.controller'
 import { Case, CaseSchema } from '../cases/schemas/case.schema'
-import { User, UserSchema } from '../users/schemas/user.schema' // імпортуй свій шлях до User
+import { User, UserSchema } from '../users/schemas/user.schema' 
 
 @Module({
   imports: [

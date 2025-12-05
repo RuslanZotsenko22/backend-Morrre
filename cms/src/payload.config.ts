@@ -1,4 +1,3 @@
-
 import path from 'path'
 import { buildConfig } from 'payload'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
@@ -6,13 +5,18 @@ import { mongooseAdapter } from '@payloadcms/db-mongodb'
 import nodemailer from 'nodemailer'
 
 import PopularQueue from './collections/PopularQueue'
+import { Media } from './collections/Media'
+import { Bots } from './collections/Bots'
+import { BotnetQueue } from './collections/BotnetQueue'
+import { BotnetSettings } from './collections/BotnetSettings'
+import { BotAvatars } from './collections/BotAvatars'
 
 // ---- Mongo URL / Secret
 const mongoURL = process.env.MONGODB_URI || process.env.DATABASE_URI || process.env.MONGO_URI
 if (!mongoURL) throw new Error('Missing MONGODB_URI / DATABASE_URI / MONGO_URI')
 if (!process.env.PAYLOAD_SECRET) throw new Error('Missing PAYLOAD_SECRET')
 
-// ---- helper: масив об’єктів { value }
+// ---- helper: масив об'єктів { value }
 function toArrayOfValueObjects(input: unknown, limit = 50): Array<{ value: string }> {
   const out: Array<{ value: string }> = []
   const push = (s: string) => {
@@ -60,6 +64,16 @@ export default buildConfig({
   editor: lexicalEditor({}),
   // @ts-ignore
   email: () => emailAdapter,
+
+  //  BOTNET in admin 
+  admin: {
+    groups: [
+      {
+        label: 'Botnet',
+        items: ['bots', 'botnet-queue', 'botnet-settings', 'bot-avatars'],
+      },
+    ],
+  },
 
   collections: [
     // -------- ADMINS
@@ -134,6 +148,45 @@ export default buildConfig({
           type: 'number',
           label: 'Weekly score',
           admin: { readOnly: true, position: 'sidebar' },
+        },
+        
+        //  for botnet
+        {
+          name: 'isBot',
+          type: 'checkbox',
+          defaultValue: false,
+          admin: {
+            hidden: true,
+            description: 'Позначає, чи є цей обліковий запис ботом',
+          },
+        },
+        {
+          name: 'canVote',
+          type: 'checkbox',
+          defaultValue: false,
+          admin: {
+            description: 'Чи може цей користувач/бот голосувати за кейси',
+            condition: (data) => data?.isBot,
+          },
+        },
+        {
+          name: 'lastBotActivity',
+          type: 'date',
+          admin: {
+            description: 'Остання активність бота',
+            readOnly: true,
+            condition: (data) => data?.isBot,
+          },
+        },
+        {
+          name: 'botActivityCount',
+          type: 'number',
+          defaultValue: 0,
+          admin: {
+            description: 'Кількість виконаних активностей',
+            readOnly: true,
+            condition: (data) => data?.isBot,
+          },
         },
       ],
     },
@@ -262,7 +315,7 @@ export default buildConfig({
             {
               label: 'Popular meta',
               fields: [
-                { name: 'featuredSlides', type: 'checkbox', label: 'Show in “Popular today” slides', defaultValue: false },
+                { name: 'featuredSlides', type: 'checkbox', label: 'Show in "Popular today" slides', defaultValue: false },
                 {
                   name: 'popularQueued',
                   type: 'checkbox',
@@ -397,7 +450,7 @@ export default buildConfig({
         { name: 'featured', type: 'checkbox', defaultValue: false, label: 'Показувати на головній' },
         { name: 'order', type: 'number', defaultValue: 0 },
       ],
-      // ← додано інвалідацію кешу головної при зміні/видаленні колекції
+      
       hooks: {
         afterChange: [
           async () => {
@@ -429,6 +482,13 @@ export default buildConfig({
     },
 
     PopularQueue,
+
+    // БОТНЕТ КОЛЕКЦІЇ
+    Media,
+    Bots,
+    BotnetQueue, 
+    BotnetSettings,
+    BotAvatars,
   ],
 
   typescript: {

@@ -27,7 +27,22 @@ export class UsersController {
     private readonly users: UsersService,
     @Optional() private readonly rating?: UsersRatingService,
   ) {}
+@UseGuards(JwtAuthGuard)
+  @Get()
+  async listUsers(
+    @Query('q') q?: string,
+    @Query('limit') limit = '20',
+    @Query('offset') offset = '0',
+  ) {
+    const lim = parseInt(limit, 10) || 20;
+    const off = parseInt(offset, 10) || 0;
 
+    return this.users.searchPublicUsers({
+      search: q,
+      limit: lim,
+      offset: off,
+    });
+  }
   @Get('check-username')
   async checkUsername(@Query('u') u: string, @Req() req: any) {
     if (!u || u.length < 3) return { available: false };

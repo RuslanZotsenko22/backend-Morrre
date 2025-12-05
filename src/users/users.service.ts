@@ -195,7 +195,55 @@ export class UsersService {
 
     return { ok: true };
   }
+async searchPublicUsers(params: { search?: string; limit?: number; offset?: number }) {
+    const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
+    const offset = Math.max(0, Number(params.offset) || 0);
+    const search = (params.search || '').trim();
 
+    const filter: FilterQuery<UserDocument> = {
+      // показуємо тільки активних
+      isActive: { $ne: false },
+      // не показуємо ботів
+      role: { $ne: 'bot' },
+    };
+
+    if (search) {
+      const regex = new RegExp(this.escapeRegex(search), 'i');
+      (filter as any).$or = [
+        { name: regex },
+        { username: regex },
+        { email: regex },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .sort({ totalUserScore: -1, createdAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select('name username avatarUrl role totalUserScore industries whatWeDid location')
+        .lean(),
+      this.userModel.countDocuments(filter),
+    ]);
+
+    return {
+      items: items.map((u: any) => ({
+        id: u._id.toString(),
+        name: u.name,
+        username: u.username ?? null,
+        avatarUrl: u.avatarUrl ?? null,
+        role: u.role,
+        totalUserScore: u.totalUserScore ?? 0,
+        industries: u.industries ?? [],
+        whatWeDid: u.whatWeDid ?? [],
+        location: u.location ?? '',
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
   // ---------- THIN HELPERS for OAuth (НЕ ламають існуючу логіку) ----------
 
   /**

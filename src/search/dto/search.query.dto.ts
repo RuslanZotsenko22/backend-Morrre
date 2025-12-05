@@ -7,8 +7,8 @@ export class SearchQueryDto {
   q!: string;
 
   @IsOptional()
-  @IsIn(['all', 'users', 'cases'])
-  type: 'all' | 'users' | 'cases' = 'all';
+  @IsIn(['all', 'users', 'cases', 'bots'])
+  type: 'all' | 'users' | 'bots' | 'cases' = 'all' ;
 
   @IsOptional()
   @Transform(({ value }) => Number.parseInt(value, 10))

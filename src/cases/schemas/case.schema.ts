@@ -72,6 +72,10 @@ export class Case {
     >;
   };
 
+  // 👇 нове поле — формат обкладинки
+  @Prop({ type: String, enum: ['horizontal', 'vertical', 'square'], default: 'horizontal' })
+  coverFormat?: 'horizontal' | 'vertical' | 'square';
+
   @Prop({ type: [Object], default: [] })
   videos?: {
     vimeoId?: string;
@@ -118,7 +122,7 @@ export class Case {
 
   // ===== MVP рейтинг/життя та лічильники взаємодій =====
 
-  /** “Життя” кейса: використовується для сортування/вигоряння у Popular */
+  /** "Життя" кейса: використовується для сортування/вигоряння у Popular */
   @Prop({ type: Number, default: 100, min: 0, index: true })
   lifeScore: number;
 
@@ -185,6 +189,49 @@ export class Case {
   /** Статус у Popular (для швидких фільтрів/видимості) */
   @Prop({ type: String, enum: ['none', 'queued', 'published'], default: 'none', index: true })
   popularStatus: 'none' | 'queued' | 'published';
+
+  // ===== Референси (для ботнету) =====
+  @Prop([
+    {
+      _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+      image: { type: String, required: true },
+      description: { type: String, default: '' },
+      uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      likesCount: { type: Number, default: 0 },
+      status: { type: String, enum: ['active', 'archived'], default: 'active' },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ])
+  references: {
+    _id: mongoose.Types.ObjectId;
+    image: string;
+    description?: string;
+    uploadedBy?: mongoose.Types.ObjectId;
+    likesCount: number;
+    status: string;
+    createdAt: Date;
+  }[];
+
+  // ===== Кураторська система =====
+  @Prop({
+    type: {
+      score: { type: Number, default: 1.0, min: 0.5, max: 1.5 },
+      adjustedBoost: { type: Number },
+      lastCheck: { type: Date },
+      curatorCount: { type: Number, default: 0 },
+      curatorIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+      averageRating: { type: String, enum: ['excellent', 'good', 'neutral', 'bad', 'very_bad'] },
+    },
+    _id: false,
+  })
+  curatorData?: {
+    score: number;
+    adjustedBoost?: number;
+    lastCheck?: Date;
+    curatorCount: number;
+    curatorIds: mongoose.Types.ObjectId[];
+    averageRating?: string;
+  };
 }
 
 export const CaseSchema = SchemaFactory.createForClass(Case);
@@ -194,24 +241,24 @@ export const CaseSchema = SchemaFactory.createForClass(Case);
 // Текстовий індекс — по рядках (один text-індекс на колекцію)
 CaseSchema.index(
   { title: 'text', description: 'text' },
-  { weights: { title: 5, description: 1 }, name: 'text_title_description' }
+  { weights: { title: 5, description: 1 }, name: 'text_title_description' },
 );
 
 CaseSchema.index(
   { status: 1, title: 1 },
-  { name: 'idx_status_title', partialFilterExpression: { status: 'published' } }
+  { name: 'idx_status_title', partialFilterExpression: { status: 'published' } },
 );
 CaseSchema.index(
   { status: 1, categories: 1 },
-  { name: 'idx_status_categories', partialFilterExpression: { status: 'published' } }
+  { name: 'idx_status_categories', partialFilterExpression: { status: 'published' } },
 );
 CaseSchema.index(
   { status: 1, industry: 1 },
-  { name: 'idx_status_industry', partialFilterExpression: { status: 'published' } }
+  { name: 'idx_status_industry', partialFilterExpression: { status: 'published' } },
 );
 CaseSchema.index(
   { status: 1, ownerId: 1 },
-  { name: 'idx_status_owner', partialFilterExpression: { status: 'published' } }
+  { name: 'idx_status_owner', partialFilterExpression: { status: 'published' } },
 );
 
 // contributors для пошуку кейсів, де користувач є співавтором
@@ -229,7 +276,7 @@ CaseSchema.index({ views: -1 }, { name: 'idx_views_desc' });
 CaseSchema.index({ status: 1, featuredSlides: 1, updatedAt: -1 }, { name: 'idx_featuredSlides' });
 CaseSchema.index(
   { popularActive: 1, popularBatchDate: -1, popularPublishedAt: -1 },
-  { name: 'idx_popular_active_batch' }
+  { name: 'idx_popular_active_batch' },
 );
 CaseSchema.index({ popularQueued: 1, queuedAt: 1 }, { name: 'idx_popular_queue' });
 
@@ -237,5 +284,13 @@ CaseSchema.index({ popularQueued: 1, queuedAt: 1 }, { name: 'idx_popular_queue' 
 CaseSchema.index({ lifeScore: -1 }, { name: 'idx_lifeScore_desc' });
 CaseSchema.index(
   { popularActive: 1, lifeScore: -1, popularPublishedAt: -1 },
-  { name: 'idx_popular_rank' }
+  { name: 'idx_popular_rank' },
 );
+
+// Індекси для референсів
+CaseSchema.index({ 'references.status': 1 }, { name: 'idx_references_status' });
+CaseSchema.index({ 'references.uploadedBy': 1 }, { name: 'idx_references_uploadedBy' });
+
+// Додаємо індекс для кураторських даних
+CaseSchema.index({ 'curatorData.score': 1 }, { name: 'idx_curator_score' });
+CaseSchema.index({ 'curatorData.lastCheck': 1 }, { name: 'idx_curator_last_check' });

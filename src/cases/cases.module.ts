@@ -31,6 +31,7 @@ import { UserStatsQueueModule } from '../users/stats/user-stats.queue.module';
 import { PopularQueue, PopularQueueSchema } from '../home/schemas/popular-queue.schema';
 import { VideoQueue } from '../queue/video.queue'
 import { LifeScoreService } from './life-score.service';
+import { BotnetModule } from '../botnet/botnet.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { LifeScoreService } from './life-score.service';
       { name: CaseDraft.name, schema: CaseDraftSchema },
     ]),
     MediaModule,
+    BotnetModule,
      
     forwardRef(() => QueueModule),
 
